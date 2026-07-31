@@ -1,0 +1,12 @@
+node_modules/
+.env
+.env.local
+artifacts/
+cache/
+typechain-types/
+.next/
+out/
+.env.save
+
+.env.*
+!.env.example

@@ -1,0 +1,13 @@
+{
+  "name": "griddy-keeper",
+  "version": "1.0.0",
+  "description": "Griddy keeper: fetches drand evmnet beacons and resolves rounds on Robinhood Chain; serves the SSE feed",
+  "type": "module",
+  "main": "keeper.mjs",
+  "scripts": {
+    "start": "node keeper.mjs"
+  },
+  "dependencies": {
+    "viem": "^2.44.0"
+  }
+}
