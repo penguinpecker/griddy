@@ -14,7 +14,7 @@ async function main() {
     fs.readFileSync(path.join(__dirname, `../deployments/griddy-${network.name}.json`), "utf8")
   );
   const [p1] = await ethers.getSigners();
-  const griddy = await ethers.getContractAt("GriddyV4", dep.griddy);
+  const griddy = await ethers.getContractAt("GriddyV5", dep.griddy);
 
   // V5 continuous rounds: an expired betting round never rolls by itself —
   // the first stake with the PREDICTED id (current+1) opens a fresh window.

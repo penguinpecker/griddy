@@ -41,7 +41,7 @@ async function main() {
     fs.readFileSync(path.join(__dirname, `../deployments/griddy-${network.name}.json`), "utf8")
   );
   const [deployer] = await ethers.getSigners();
-  const griddy = await ethers.getContractAt("GriddyV4", dep.griddy);
+  const griddy = await ethers.getContractAt("GriddyV5", dep.griddy);
 
   // Two extra hot wallets funded from the deployer (deterministic test keys)
   const p2 = new ethers.Wallet(ethers.keccak256(ethers.toUtf8Bytes("griddy-arc-p2")), ethers.provider);

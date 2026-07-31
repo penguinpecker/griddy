@@ -16,9 +16,12 @@ Griddy only ever touches the native side.)
 
 ## How it works
 
-Every **30 seconds** a round opens. You stake any amount of USDC — from
-$0.0001 upward — on any cells you like. When the round closes, one cell wins
-and everyone on it splits the pot.
+Rounds are **continuous**: the moment one 30-second betting window closes,
+the next round is open — the first stake starts its clock. You stake any
+amount of USDC — from $0.0001 upward — on any cells you like. When a round
+closes, one cell wins, everyone on it splits the pot, and the reveal lands
+on-chain **~4 seconds later** while betting carries on in the next round.
+Rounds nobody entered simply expire; they never cost anyone a transaction.
 
 Two rules define the whole game:
 
@@ -49,7 +52,7 @@ operators. No single participant can predict or withhold a beacon.
 
 The important part is the timing. When a round opens, the contract writes down
 the *number* of a beacon that **does not exist yet** and will only be
-published about 10 seconds after betting closes. So while you're placing
+published only seconds after betting closes. So while you're placing
 stakes, the answer is not merely secret — it hasn't been created.
 
 When that beacon appears, **anyone** can submit it. The contract verifies its
@@ -65,22 +68,28 @@ Live on **Arc Testnet** (chainId 5042002 · RPC `https://rpc.testnet.arc.network
 
 | Contract | Address |
 | --- | --- |
-| GriddyV4 (UUPS proxy) | [`0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c`](https://testnet.arcscan.app/address/0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c) |
-| GriddyV4 implementation | `0xC5c53BB4A93bCe76b99c726FFA1173Be31f14d8d` |
-| DrandBeacon | [`0x73d7D306F5AE49a60c70C8Cf0331F1DA65E6cD2A`](https://testnet.arcscan.app/address/0x73d7D306F5AE49a60c70C8Cf0331F1DA65E6cD2A) |
+| GriddyV5 (UUPS proxy) | [`0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c`](https://testnet.arcscan.app/address/0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c) |
+| GriddyV5 implementation | `0x6b1e33f80ec6c3fb79e21851441b680f7a0726b3` |
+| DrandBeaconV2 (UUPS proxy) | [`0x93C3B6362D82a9f6495517F0E6Ffa63594596453`](https://testnet.arcscan.app/address/0x93C3B6362D82a9f6495517F0E6Ffa63594596453) |
+| DrandBeaconV2 implementation | `0x12fBbDE353Ef273663Bc09DC3734eC2DFa3C197b` |
 
-Full record in `contracts/deployments/griddy-arc-testnet.json`. Arc's
-precompiles were probe-verified against a real drand beacon before deploy
-(`contracts/scripts/probe-arc-precompiles.ts`), and a complete round —
-uneven stakes, on-chain BLS verification, exact 95% pro-rata auto-payout —
-was played end-to-end with `contracts/scripts/smoke-arc.ts`.
+Every contract deploys behind an upgradeable proxy. Full record in
+`contracts/deployments/griddy-arc-testnet.json`. Arc's precompiles were
+probe-verified against a real drand beacon before deploy
+(`contracts/scripts/probe-arc-precompiles.ts`); complete rounds — uneven
+stakes, on-chain BLS verification, exact 95% pro-rata auto-payout — are
+played end-to-end with `contracts/scripts/smoke-arc.ts`, and
+`contracts/scripts/verify-payouts.ts` audits live rounds from chain data
+alone (pot == sum of stake events, prize == 95% exactly, pro-rata payouts,
+contract balance covers every liability to the wei).
 
 ## Parameters
 
 | | Value | |
 |:---|:---|:---|
-| Round length | 30 s | owner-tunable, 10 s – 1 h |
-| Beacon gap | 10 s | safety margin before the beacon exists; floor 8 s |
+| Round length | 30 s | the clock starts on the round's first stake; owner-tunable, 10 s – 1 h |
+| Beacon gap | 4 s | delay before the pinned beacon exists; floor 3 s |
+| Reveal latency | ~4 s measured | round end → resolved on-chain (`scripts/measure-resolution.ts`) |
 | Minimum stake | $0.0001 | per *new* position; top-ups can be any size |
 | Maximum stake | none | capital buys share, not better odds |
 | Protocol fee | 5% | capped at 20% |
@@ -92,9 +101,11 @@ was played end-to-end with `contracts/scripts/smoke-arc.ts`.
 The contract has been through adversarial review passes. Highlights of
 what's in place:
 
-- **Solvency is an invariant.** Contract balance always covers the live
-  round's stakes, outstanding refunds, escrowed winnings and unclaimed fees.
-  Rounding dust is banked into fees so no wei is ever untracked.
+- **Solvency is an invariant.** Contract balance always covers every pending
+  round's stakes (tracked across concurrent rounds by
+  `totalUnresolvedStakes`), outstanding refunds, escrowed winnings and
+  unclaimed fees. Rounding dust is banked into fees so no wei is ever
+  untracked — auditable any time with `scripts/verify-payouts.ts`.
 - **The owner cannot touch player money.** `sweepSurplus` can only remove
   funds owed to nobody. `renounceOwnership` is disabled, since one accidental
   call would strand fees and destroy every recovery path.
@@ -113,11 +124,12 @@ what's in place:
 ```
 contracts/
   src/
-    GriddyV2.sol → GriddyV4.sol   the game (UUPS-upgradeable; V4 is current)
-    drand/DrandBeacon.sol         on-chain BLS verification of drand beacons
+    GriddyV2.sol → GriddyV5.sol   the game (UUPS-upgradeable; V5 is current:
+                                  continuous rounds, decoupled resolution)
+    drand/DrandBeaconV2.sol       on-chain BLS verification (UUPS proxy)
     drand/BLS.sol                 BN254 pairing helpers (kevincharm/bls-bn254, MIT)
-  test/                           tests using real drand signatures as fixtures
-  scripts/                        deploy, upgrade, verification and smoke-test scripts
+  test/                           adversarial suites using real drand signatures
+  scripts/                        deploy, upgrade, audit and smoke-test scripts
 services/keeper/                  fetches beacons, resolves rounds, serves the live feed
 app/                              Next.js frontend
 ```

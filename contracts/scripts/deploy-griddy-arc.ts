@@ -4,8 +4,9 @@ import * as path from "path";
 
 /**
  * Fresh Griddy deployment for Arc testnet (native-USDC stakes):
- *   1. DrandBeacon (immutable evmnet config — swappable via setBeacon)
- *   2. GriddyV4 behind a UUPS proxy (no reward token in V4)
+ *   1. DrandBeaconV2 behind a UUPS proxy (evmnet config in storage)
+ *   2. GriddyV5 behind a UUPS proxy (continuous rounds, no reward token)
+ *  (every contract deploys behind a proxy — standing rule)
  *
  *   npx hardhat run scripts/deploy-griddy-arc.ts --network arc-testnet
  */
@@ -33,12 +34,16 @@ async function main() {
     throw new Error("Deployer needs at least 0.5 native USDC for gas");
   }
 
-  const Beacon = await ethers.getContractFactory("DrandBeacon");
-  const beacon = await Beacon.deploy(EVMNET_PUBKEY, EVMNET_GENESIS, EVMNET_PERIOD);
+  const Beacon = await ethers.getContractFactory("DrandBeaconV2");
+  const beacon = await upgrades.deployProxy(
+    Beacon,
+    [deployer.address, EVMNET_PUBKEY, EVMNET_GENESIS, EVMNET_PERIOD],
+    { kind: "uups" }
+  );
   await beacon.waitForDeployment();
-  console.log(`DrandBeacon:   ${await beacon.getAddress()}`);
+  console.log(`DrandBeaconV2: ${await beacon.getAddress()} (proxy)`);
 
-  const GriddyF = await ethers.getContractFactory("GriddyV4");
+  const GriddyF = await ethers.getContractFactory("GriddyV5");
   const griddy = await upgrades.deployProxy(
     GriddyF,
     [feeRecipient, await beacon.getAddress(), deployer.address],
@@ -46,7 +51,7 @@ async function main() {
   );
   await griddy.waitForDeployment();
   const griddyAddr = await griddy.getAddress();
-  console.log(`GriddyV4:      ${griddyAddr} (proxy)`);
+  console.log(`GriddyV5:      ${griddyAddr} (proxy)`);
   console.log(`  impl:        ${await upgrades.erc1967.getImplementationAddress(griddyAddr)}`);
 
   const out = {

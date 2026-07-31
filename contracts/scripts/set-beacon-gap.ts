@@ -14,7 +14,7 @@ async function main() {
   const dep = JSON.parse(
     fs.readFileSync(path.join(__dirname, `../deployments/griddy-${network.name}.json`), "utf8")
   );
-  const griddy = await ethers.getContractAt("GriddyV4", dep.griddy);
+  const griddy = await ethers.getContractAt("GriddyV5", dep.griddy);
   console.log(`beaconGap before: ${await griddy.beaconGap()}s`);
   const tx = await griddy.setBeaconGap(gap);
   await tx.wait();
