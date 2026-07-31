@@ -64,7 +64,7 @@ export default function HowToPlay() {
       <div style={S.dotGrid} />
 
       {/* Header */}
-      <header style={S.header}>
+      <header className="htp-header" style={S.header}>
         <div style={S.hLeft}>
           <GriddyMark size={30} />
           <span style={S.logo}>griddy</span>
@@ -76,7 +76,7 @@ export default function HowToPlay() {
       </header>
 
       {/* Content */}
-      <div style={S.content}>
+      <div className="htp-content" style={S.content}>
         {/* Hero */}
         <div style={S.hero}>
           <div style={S.heroTag}>PICK A SQUARE. TAKE THE POT. ✦</div>
@@ -195,7 +195,7 @@ export default function HowToPlay() {
       </div>
 
       {/* Footer */}
-      <footer style={S.footer}>
+      <footer className="htp-footer" style={S.footer}>
         <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <GriddyMark size={16} />
           <span style={S.footerOnline}>GRIDDY ONLINE</span>
@@ -225,10 +225,14 @@ export default function HowToPlay() {
           100% { background-position: 200% 0; }
         }
         @media (max-width: 640px) {
-          .htp-info-grid { grid-template-columns: 1fr !important; }
+          .htp-info-grid { grid-template-columns: minmax(0, 1fr) !important; }
           .htp-special-cards { flex-direction: column !important; }
-          .htp-demo-grid { width: 260px !important; }
+          .htp-demo-grid { width: min(280px, 100%) !important; }
           .htp-hero-title { font-size: 28px !important; }
+          .htp-header { padding: 12px 14px !important; }
+          .htp-footer { padding: 10px 14px !important; }
+          .htp-content { padding: 32px 14px 48px !important; }
+          .htp-step { padding: 16px 14px !important; gap: 14px !important; }
         }
       `}</style>
     </div>
@@ -238,9 +242,9 @@ export default function HowToPlay() {
 // ── Sub-components ──
 function Step({ num, title, children }) {
   return (
-    <div style={S.step}>
+    <div className="htp-step" style={S.step}>
       <div style={S.stepNum}>{num}</div>
-      <div style={{ flex: 1 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
         <div style={S.stepTitle}>{title}</div>
         <div style={S.stepDesc}>{children}</div>
       </div>
@@ -301,8 +305,9 @@ const S = {
     display: "flex", justifyContent: "space-between", alignItems: "center",
     padding: "12px 20px", borderBottom: "1px solid rgba(148,178,255,0.08)",
     background: "rgba(6,11,28,0.95)", zIndex: 10, position: "relative",
+    flexWrap: "wrap", gap: 8,
   },
-  hLeft: { display: "flex", alignItems: "center", gap: 10 },
+  hLeft: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", minWidth: 0 },
   hRight: { display: "flex", alignItems: "center", gap: 16 },
   dot: { width: 10, height: 10, borderRadius: 3, background: "#3E8BFF", boxShadow: "0 0 12px rgba(62,139,255,0.55)" },
   logo: { fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 20, color: "#F4F7FF", letterSpacing: 0.5 },
@@ -318,6 +323,8 @@ const S = {
     border: "1px solid rgba(148,178,255,0.12)",
     background: "rgba(148,178,255,0.06)",
     color: "#8FA3C9", cursor: "pointer", letterSpacing: 2, textDecoration: "none",
+    display: "inline-flex", alignItems: "center", justifyContent: "center",
+    minHeight: 40, whiteSpace: "nowrap",
   },
 
   // Content
@@ -368,8 +375,8 @@ const S = {
     fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 700,
     letterSpacing: 3, color: "#55688F", marginBottom: 16,
   },
-  demoGridWrap: { display: "inline-block", position: "relative", padding: 14 },
-  demoGrid: { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 7, width: 310 },
+  demoGridWrap: { display: "inline-block", position: "relative", padding: 14, maxWidth: "100%" },
+  demoGrid: { display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 7, width: "min(310px, 100%)" },
   demoCell: {
     aspectRatio: "1", borderRadius: "26%",
     display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
@@ -413,7 +420,7 @@ const S = {
 
   // Info Cards
   infoGrid: {
-    display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 48,
+    display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 16, marginTop: 48,
   },
   infoCard: {
     border: "1px solid rgba(148,178,255,0.08)", borderRadius: 20,

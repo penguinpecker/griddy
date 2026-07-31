@@ -81,7 +81,8 @@ const GRID_ABI = [
 ];
 
 // Quick-stake chips (dollars of USDC). Manual entry allowed down to MIN_STAKE.
-const STAKE_CHIPS = ["0.1", "0.5", "1", "5", "10"];
+// "1000" renders as "1K" in the chip UI; the value string stays "1000" for parseEther.
+const STAKE_CHIPS = ["0.1", "1", "10", "100", "1000"];
 const MIN_STAKE_DEFAULT = 100000000000000n; // $0.0001 — fallback only; chain minStakeWei is the source of truth
 const ROUND_DURATION = 60;
 const GRID_SIZE = 5;
@@ -866,8 +867,31 @@ export default function TheGrid() {
     cellsPicked > 0 && potWeiNow > 0n ? Number((myCellsTotal * 1000n) / potWeiNow) / 10 : null;
 
   // ─── Shared panels (rendered in the side rails on desktop, inline on mobile) ───
+  const renderFeed = () => (
+    <div style={S.panel}>
+      <div style={S.panelHead}>
+        <span>LIVE FEED</span>
+        {sseConnected && <span style={S.liveTag}>● LIVE</span>}
+      </div>
+      <div style={{ padding: "8px 14px" }}>
+        <div style={S.feedBody} className="grid-user-history-scroll">
+          {feed.length === 0 ? (
+            <div style={S.feedEmpty}>waiting for round activity…</div>
+          ) : (
+            feed.map((f, i) => (
+              <div key={`${f.time}-${i}`} style={S.feedItem}>
+                <span style={S.feedTime}>{new Date(f.time).toLocaleTimeString([], { hour12: false })}</span>
+                <span>{f.msg}</span>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   const renderUserHistory = () => (
-    <div style={S.tablePanel}>
+    <div style={S.tablePanel} className="grid-table-panel">
       <div style={S.tableHead}>
         <span style={S.tableTitle}>YOUR HISTORY</span>
         <span style={S.tableMeta}>
@@ -949,7 +973,7 @@ export default function TheGrid() {
     const hasOlder = roundHistory.length > 0 && (historyPage < totalPages - 1 || !historyFullyLoaded);
     const hasNewer = historyPage > 0;
     return (
-      <div style={{ ...S.tablePanel, animation: "winnerBannerIn 0.5s ease-out" }}>
+      <div style={{ ...S.tablePanel, animation: "winnerBannerIn 0.5s ease-out" }} className="grid-table-panel">
         <div style={S.tableHead}>
           <span style={S.tableTitle}>ROUND HISTORY</span>
           <span style={S.tableMeta}>
@@ -1073,7 +1097,7 @@ export default function TheGrid() {
   // RENDER
   // ═══════════════════════════════════════════════════════════════
   return (
-    <div style={S.root}>
+    <div style={S.root} className="grid-root">
       {/* ─── BACKDROP: top glow + dotted grid + corner ticks ─── */}
       <div style={S.bgLayer} aria-hidden="true">
         <span style={{ ...S.bgTick, top: 76, left: 22 }}>+</span>
@@ -1273,26 +1297,7 @@ export default function TheGrid() {
 
         {/* ─── LEFT RAIL: live feed (desktop) ─── */}
         <aside className="grid-aside" style={S.aside}>
-          <div style={S.panel}>
-            <div style={S.panelHead}>
-              <span>LIVE FEED</span>
-              {sseConnected && <span style={S.liveTag}>● LIVE</span>}
-            </div>
-            <div style={{ padding: "8px 14px" }}>
-              <div style={S.feedBody} className="grid-user-history-scroll">
-                {feed.length === 0 ? (
-                  <div style={S.feedEmpty}>waiting for round activity…</div>
-                ) : (
-                  feed.map((f, i) => (
-                    <div key={`${f.time}-${i}`} style={S.feedItem}>
-                      <span style={S.feedTime}>{new Date(f.time).toLocaleTimeString([], { hour12: false })}</span>
-                      <span>{f.msg}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
+          {renderFeed()}
           {authenticated && userHistory.length > 0 && renderUserHistory()}
           <div style={S.railHint}>RANDOMNESS BY DRAND — BEACON VERIFIED ON-CHAIN EVERY ROUND</div>
         </aside>
@@ -1301,23 +1306,23 @@ export default function TheGrid() {
         <div style={S.gridArea} className="grid-game-area">
           {/* Round tag + pot hero */}
           <div style={S.roundTag}>ROUND {round || "—"}</div>
-          <div style={S.potLabel}>✦ TOTAL POT ✦</div>
-          <div style={S.potHero}>
-            ${fmt(potSize)}<span style={S.potUnit}> USDC</span>
+          <div style={S.potLabel} className="grid-pot-label">✦ TOTAL POT ✦</div>
+          <div style={S.potHero} className="grid-pot-hero">
+            ${fmt(potSize)}<span style={S.potUnit} className="grid-pot-unit"> USDC</span>
           </div>
           {lastResult && (
-            <div style={S.lastPill}>
+            <div style={S.lastPill} className="grid-last-pill">
               ✦ R{lastResult.roundId} · {CELL_LABELS[lastResult.cell] || "?"} TOOK <span style={{ color: "#6FB0FF", fontWeight: 700 }}>${fmt(lastResult.pot)}</span>
             </div>
           )}
 
           {/* Countdown */}
-          <div style={S.timerPanel}>
+          <div style={S.timerPanel} className="grid-timer-panel">
             <div style={S.timerLabel}>
               {round === 0 ? "INITIALIZING" : resolved ? "ROUND RESOLVED" : smoothTime <= 0 ? "RESOLVING" : "PICK A SQUARE"}
             </div>
-            <div style={{ ...S.timerBig, color: timerColor }}>{timerDisplay}</div>
-            <div style={S.timerBarBg}>
+            <div style={{ ...S.timerBig, color: timerColor }} className="grid-timer-big">{timerDisplay}</div>
+            <div style={S.timerBarBg} className="grid-timer-bar">
               <div style={{
                 ...S.timerBarFill,
                 width: `${timerProgress * 100}%`,
@@ -1327,7 +1332,7 @@ export default function TheGrid() {
           </div>
 
           {/* Grid */}
-          <div style={S.gridOuter}>
+          <div style={S.gridOuter} className="grid-outer-panel">
             {/* Grid flash on new round */}
             {gridFlash && (
               <div style={{
@@ -1356,7 +1361,7 @@ export default function TheGrid() {
               </div>
             )}
 
-            <div style={S.grid}>
+            <div style={S.grid} className="grid-cells">
               {CELL_LABELS.map((label, idx) => {
                 const state = getCellState(idx);
                 const isSelected = selectedCell === idx;
@@ -1428,13 +1433,13 @@ export default function TheGrid() {
           </div>
 
           {/* Status */}
-          <div style={S.statusBar}>
+          <div style={S.statusBar} className="grid-status-bar">
             <span style={{ fontWeight: 600 }}>{getStatus()}</span>
             <span className="grid-tap-hint" style={{ color: "#55688F", fontSize: 10 }}>TAP TO SELECT · DOUBLE-TAP TO ENTER</span>
           </div>
 
           {/* Stat row — real data only */}
-          <div style={S.statRow}>
+          <div style={S.statRow} className="grid-stat-row">
             <div style={S.statCell}>
               <span style={S.statValueTop}>{winChancePct != null ? `${winChancePct}%` : "—"}</span>
               <span style={S.statLabel}>⚡ WIN CHANCE</span>
@@ -1450,7 +1455,7 @@ export default function TheGrid() {
           </div>
 
           {/* Bet panel — all viewports */}
-          <div style={S.betPanel}>
+          <div style={S.betPanel} className="grid-bet-panel">
             {(() => {
               const focus = selectedCell != null ? selectedCell : (hoveredCell >= 0 ? hoveredCell : null);
               const pay = focus != null ? payoutFor(focus) : null;
@@ -1542,7 +1547,17 @@ export default function TheGrid() {
           </div>
 
           {/* Provably fair link */}
-          <a href="/how-to-play" style={S.fairLink}>🛡 PROVABLY FAIR ›</a>
+          <a href="/how-to-play" style={S.fairLink} className="grid-fair-link">🛡 PROVABLY FAIR ›</a>
+
+          {/* ─── MOBILE LIVE FEED (desktop shows it in the left rail) ─── */}
+          <div className="grid-feed-mobile" style={{ width: "100%", marginTop: 14 }}>
+            {renderFeed()}
+          </div>
+
+          {/* ─── MOBILE ROUND HISTORY (desktop shows it in the right rail) ─── */}
+          <div className="grid-history-mobile" style={{ width: "100%", marginTop: 14 }}>
+            {renderRoundHistory()}
+          </div>
 
           {/* ─── MOBILE USER HISTORY (desktop shows it in the left rail) ─── */}
           {authenticated && userHistory.length > 0 && (
@@ -1550,11 +1565,6 @@ export default function TheGrid() {
               {renderUserHistory()}
             </div>
           )}
-
-          {/* ─── MOBILE ROUND HISTORY (desktop shows it in the right rail) ─── */}
-          <div className="grid-history-mobile" style={{ width: "100%", marginTop: 14 }}>
-            {renderRoundHistory()}
-          </div>
         </div>
 
         {/* ─── RIGHT RAIL: round history (desktop) ─── */}
@@ -1625,20 +1635,50 @@ export default function TheGrid() {
         }
         .nav-btn-home:hover { color: #3E8BFF !important; }
         .nav-btn-play { pointer-events: none; }
+        .grid-root { min-height: 100dvh !important; }
         .grid-aside { position: sticky; top: 20px; }
         .wallet-addr-mobile { display: none !important; }
         .wallet-addr-desktop { display: inline !important; }
-        .grid-user-history-scroll::-webkit-scrollbar { width: 4px; }
-        .grid-user-history-scroll::-webkit-scrollbar-track { background: rgba(148,178,255,0.04); }
-        .grid-user-history-scroll::-webkit-scrollbar-thumb { background: rgba(62,139,255,0.3); border-radius: 2px; }
+        .grid-table-panel { min-width: 0; }
+        .grid-user-history-scroll::-webkit-scrollbar,
+        .grid-aside::-webkit-scrollbar { width: 4px; }
+        .grid-user-history-scroll::-webkit-scrollbar-track,
+        .grid-aside::-webkit-scrollbar-track { background: rgba(148,178,255,0.04); }
+        .grid-user-history-scroll::-webkit-scrollbar-thumb,
+        .grid-aside::-webkit-scrollbar-thumb { background: rgba(62,139,255,0.3); border-radius: 2px; }
+
+        /* ── DESKTOP ≥1200: full-canvas three-column app layout ── */
+        @media (min-width: 1200px) {
+          .grid-main {
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) min(640px, 100%) minmax(0, 1fr) !important;
+            align-items: start !important;
+            justify-content: stretch !important;
+            max-width: none !important;
+            width: 100% !important;
+            padding: 0 28px !important;
+            gap: 24px !important;
+          }
+          .grid-game-area { width: 100% !important; max-width: 640px !important; margin: 0 auto !important; }
+          .grid-aside {
+            width: auto !important;
+            min-width: 0 !important;
+            max-height: calc(100vh - 96px);
+            max-height: calc(100dvh - 96px);
+            overflow-y: auto;
+            overscroll-behavior: contain;
+          }
+          .grid-history-mobile { display: none !important; }
+          .grid-user-history-mobile { display: none !important; }
+          .grid-feed-mobile { display: none !important; }
+        }
+
+        /* ── TABLET 769–1199: centered game column, rails stack below ── */
         @media (max-width: 1199px) {
           .grid-aside { display: none !important; }
           .grid-main { flex-direction: column !important; align-items: center !important; }
         }
-        @media (min-width: 1200px) {
-          .grid-history-mobile { display: none !important; }
-          .grid-user-history-mobile { display: none !important; }
-        }
+
         @media (max-width: 640px) {
           .grid-tap-hint { display: none !important; }
           .grid-header-nav { display: none !important; }
@@ -1648,18 +1688,55 @@ export default function TheGrid() {
           .grid-logo-text { font-size: 17px !important; }
           .grid-header-wallet-btn button { font-size: 9px !important; padding: 6px 10px !important; letter-spacing: 0.5px !important; }
         }
+
+        /* ── MOBILE ≤768: full-bleed app layout, tight vertical rhythm ── */
         @media (max-width: 768px) {
+          .grid-header { position: sticky !important; top: 0 !important; height: 54px !important; }
+          .grid-main { padding: 0 12px !important; }
           .grid-wallet-dropdown { right: 0 !important; left: auto !important; max-width: calc(100vw - 16px) !important; }
           .grid-game-area {
-            padding: 12px 12px !important;
-            overflow-y: auto !important;
-            -webkit-overflow-scrolling: touch !important;
-            max-height: none !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            padding: 8px 0 10px !important;
             justify-content: flex-start !important;
             flex: 1 1 auto !important;
             min-height: 0 !important;
           }
           .grid-header-wallet-btn { font-size: 10px !important; }
+          .grid-pot-label { margin: 6px 0 0 !important; }
+          .grid-pot-hero { font-size: clamp(30px, 10.5vw, 42px) !important; }
+          .grid-pot-unit { font-size: 15px !important; }
+          .grid-last-pill { margin-top: 6px !important; padding: 4px 10px !important; }
+          .grid-timer-panel {
+            margin-top: 8px !important;
+            padding: 8px 14px 10px !important;
+            flex-direction: row !important;
+            flex-wrap: wrap !important;
+            justify-content: space-between !important;
+            align-items: center !important;
+            gap: 6px !important;
+            border-radius: 16px !important;
+          }
+          .grid-timer-big { font-size: 22px !important; line-height: 1 !important; }
+          .grid-timer-bar { width: 100% !important; }
+          .grid-outer-panel { margin-top: 10px !important; padding: 10px !important; border-radius: 18px !important; }
+          .grid-cells { gap: 8px !important; }
+          .grid-status-bar { margin-top: 4px !important; padding: 6px 2px !important; }
+          .grid-stat-row { margin-top: 6px !important; padding: 9px 0 !important; border-radius: 14px !important; }
+          .grid-bet-panel { margin-top: 8px !important; padding: 12px !important; gap: 9px !important; border-radius: 16px !important; }
+          .stake-chip { min-height: 40px !important; font-size: 11px !important; }
+          .grid-fair-link { margin-top: 10px !important; }
+          .grid-table-panel button { min-height: 40px; }
+        }
+
+        /* ── NARROW ≤480: keep tables inside the viewport, no page x-scroll ── */
+        @media (max-width: 480px) {
+          .grid-table-panel span, .grid-table-panel a {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
         }
 
       `}</style>
@@ -1681,6 +1758,7 @@ function StakePicker({ value, onChange, minStake, stakeWei }) {
           return (
             <button
               key={c}
+              className="stake-chip"
               onClick={() => onChange(c)}
               style={{
                 flex: 1, padding: "7px 2px", borderRadius: 999, cursor: "pointer",
@@ -1690,7 +1768,7 @@ function StakePicker({ value, onChange, minStake, stakeWei }) {
                 color: active ? "#EAF1FF" : "#8FA3C9",
               }}
             >
-              {c}
+              {c === "1000" ? "1K" : c}
             </button>
           );
         })}
@@ -1814,7 +1892,7 @@ const S = {
   aside: { width: 320, flexShrink: 0, display: "flex", flexDirection: "column", gap: 14, padding: "20px 0" },
 
   // ── Game column ──
-  gridArea: { width: "100%", maxWidth: 480, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", padding: "18px 0 10px", minHeight: 0, minWidth: 0 },
+  gridArea: { width: "100%", maxWidth: 640, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", padding: "18px 0 10px", minHeight: 0, minWidth: 0 },
   roundTag: { fontSize: 10, letterSpacing: 3, color: "#55688F", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" },
   potLabel: { fontSize: 10, letterSpacing: 3, color: "#8FA3C9", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", margin: "12px 0 0" },
   potHero: {

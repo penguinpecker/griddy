@@ -135,21 +135,21 @@ export default function HomePage() {
       <div style={{position:"fixed", inset:0, pointerEvents:"none", zIndex:1, backgroundImage:"radial-gradient(rgba(148,178,255,0.05) 1px,transparent 1px)", backgroundSize:"26px 26px"}}/>
 
       {/* Header */}
-      <header style={{display:"grid", gridTemplateColumns:"1fr auto 1fr", alignItems:"center", padding:"0 24px", height:58, borderBottom:"1px solid rgba(148,178,255,0.08)", background:"rgba(6,11,28,0.92)", backdropFilter:"blur(12px)", zIndex:100, position:"sticky", top:0}}>
-        <div style={{display:"flex", alignItems:"center", gap:9, cursor:"pointer"}} onClick={()=>router.push("/")}>
+      <header className="sec-pad" style={{display:"grid", gridTemplateColumns:"1fr auto 1fr", alignItems:"center", padding:"0 24px", height:58, borderBottom:"1px solid rgba(148,178,255,0.08)", background:"rgba(6,11,28,0.92)", backdropFilter:"blur(12px)", zIndex:100, position:"sticky", top:0}}>
+        <div style={{display:"flex", alignItems:"center", gap:9, cursor:"pointer", padding:"10px 0", margin:"-10px 0", minWidth:0}} onClick={()=>router.push("/")}>
           <GriddyMark size={26}/>
           <span style={{fontFamily:BALOO, fontWeight:800, fontSize:19, color:"#F4F7FF", letterSpacing:0.5}}>griddy</span>
-          <div style={{width:6, height:6, borderRadius:"50%", background:ACCENT, boxShadow:"0 0 6px rgba(62,139,255,0.8)", animation:"pulse 2s ease-in-out infinite", marginLeft:2}}/>
+          <div style={{width:6, height:6, borderRadius:"50%", background:ACCENT, boxShadow:"0 0 6px rgba(62,139,255,0.8)", animation:"pulse 2s ease-in-out infinite", marginLeft:2, flexShrink:0}}/>
         </div>
         <nav style={{display:"flex", alignItems:"center", gap:4}}>
-          <button onClick={()=>router.push("/")} className="nav-btn-home" style={{background:"transparent", border:"none", fontFamily:MONO, fontSize:10, fontWeight:700, color:FAINT, cursor:"pointer", letterSpacing:2, padding:"7px 16px", borderRadius:999, transition:"color 0.2s"}}>HOME</button>
-          <button onClick={()=>router.push("/play")} className="nav-btn-play-hp" style={{background:"transparent", border:"none", fontFamily:MONO, fontSize:10, fontWeight:700, color:ACCENT, cursor:"pointer", letterSpacing:2, padding:"7px 16px", borderRadius:999, animation:"navGlow 3s ease-in-out infinite", transition:"color 0.2s"}}>PLAY</button>
+          <button onClick={()=>router.push("/")} className="nav-btn-home" style={{background:"transparent", border:"none", fontFamily:MONO, fontSize:10, fontWeight:700, color:FAINT, cursor:"pointer", letterSpacing:2, padding:"14px 16px", borderRadius:999, transition:"color 0.2s"}}>HOME</button>
+          <button onClick={()=>router.push("/play")} className="nav-btn-play-hp" style={{background:"transparent", border:"none", fontFamily:MONO, fontSize:10, fontWeight:700, color:ACCENT, cursor:"pointer", letterSpacing:2, padding:"14px 16px", borderRadius:999, animation:"navGlow 3s ease-in-out infinite", transition:"color 0.2s"}}>PLAY</button>
         </nav>
         <div/>
       </header>
 
       {/* ── HERO ── */}
-      <section style={{position:"relative", zIndex:5, padding:"56px 20px 44px", maxWidth:1080, margin:"0 auto"}}>
+      <section className="sec-pad" style={{position:"relative", zIndex:5, padding:"56px 20px 44px", maxWidth:1080, margin:"0 auto"}}>
         <span style={{position:"absolute", top:16, left:20, fontFamily:MONO, fontSize:18, color:"rgba(148,178,255,0.22)"}}>+</span>
         <span style={{position:"absolute", top:16, right:20, fontFamily:MONO, fontSize:18, color:"rgba(148,178,255,0.22)"}}>+</span>
 
@@ -159,7 +159,7 @@ export default function HomePage() {
             <GriddyMark size={72}/>
             <span style={{fontFamily:BALOO, fontWeight:800, fontSize:"clamp(56px,11vw,96px)", color:"#F4F7FF", letterSpacing:0.5, lineHeight:1}}>griddy</span>
           </div>
-          <div style={{fontFamily:MONO, fontSize:"clamp(11px,2.7vw,14px)", letterSpacing:4, fontWeight:600, color:ACCENT, marginBottom:18}}>PICK A SQUARE. TAKE THE POT. ✦</div>
+          <div className="hero-tag" style={{fontFamily:MONO, fontSize:"clamp(11px,2.7vw,14px)", letterSpacing:4, fontWeight:600, color:ACCENT, marginBottom:18, textAlign:"center"}}>PICK A SQUARE. TAKE THE POT. ✦</div>
           <div style={{fontSize:13.5, color:MUTED, lineHeight:1.8, marginBottom:22, maxWidth:560}}>
             Pick a cell on the 5×5 grid. A drand randomness beacon — verified on-chain — selects the winner from occupied cells only. Winners share the pot — or keep everything if they picked alone.
           </div>
@@ -180,7 +180,7 @@ export default function HomePage() {
                 <span style={{writingMode:"vertical-rl", transform:"rotate(180deg)", fontFamily:MONO, fontSize:9, letterSpacing:2, color:FAINT}}>5×5 GRID</span>
                 <div style={{flex:1, width:0, borderLeft:"1px dashed rgba(148,178,255,0.2)"}}/>
               </div>
-              <div style={{display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:8, flex:1}}>
+              <div style={{display:"grid", gridTemplateColumns:"repeat(5,minmax(0,1fr))", gap:8, flex:1, minWidth:0}}>
                 {LBL.map((lbl, i) => {
                   const isWin = i === winner;
                   const isClaimed = CLAIMED.includes(i) && !isWin;
@@ -248,7 +248,7 @@ export default function HomePage() {
                       <span style={{fontFamily:MONO, fontSize:9, color:FAINT, letterSpacing:2}}>OR</span>
                       <div style={{flex:1, height:1, background:"rgba(148,178,255,0.08)"}}/>
                     </div>
-                    <button onClick={()=>router.push("/play")} className="ghost-pill" style={{width:"100%", fontFamily:MONO, fontSize:10, fontWeight:600, padding:"10px 16px", borderRadius:999, border:"1px solid rgba(148,178,255,0.12)", background:"rgba(148,178,255,0.06)", color:MUTED, cursor:"pointer", letterSpacing:1.5, transition:"border-color 0.2s,color 0.2s"}}>PLAY WITH USDC →</button>
+                    <button onClick={()=>router.push("/play")} className="ghost-pill" style={{width:"100%", fontFamily:MONO, fontSize:10, fontWeight:600, padding:"14px 16px", borderRadius:999, border:"1px solid rgba(148,178,255,0.12)", background:"rgba(148,178,255,0.06)", color:MUTED, cursor:"pointer", letterSpacing:1.5, transition:"border-color 0.2s,color 0.2s"}}>PLAY WITH USDC →</button>
                   </div>
                 </>
               ) : (
@@ -270,20 +270,20 @@ export default function HomePage() {
       </section>
 
       {/* ── TILE STATES + WINNER REVEAL ── */}
-      <section style={{position:"relative", zIndex:5, padding:"12px 20px 56px", maxWidth:1080, margin:"0 auto"}}>
+      <section className="sec-pad" style={{position:"relative", zIndex:5, padding:"12px 20px 56px", maxWidth:1080, margin:"0 auto"}}>
         <div className="states-band">
-          <div style={{...CARD, padding:"20px 22px", display:"flex", flexDirection:"column", gap:18}}>
+          <div className="state-card" style={{...CARD, padding:"20px 22px", display:"flex", flexDirection:"column", gap:18}}>
             <div style={{fontFamily:MONO, fontSize:10, fontWeight:700, letterSpacing:3, color:MUTED}}>TILE STATES</div>
-            <div style={{display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:12, alignItems:"end"}}>
+            <div className="tile-states-grid" style={{display:"grid", gridTemplateColumns:"repeat(5,minmax(0,1fr))", gap:12, alignItems:"end"}}>
               {[["EMPTY","empty"],["HOVER","hover"],["SELECTED","selected"],["MISS","miss"],["WIN","win"]].map(([label,state])=>(
-                <div key={label} style={{display:"flex", flexDirection:"column", alignItems:"center", gap:10}}>
+                <div key={label} style={{display:"flex", flexDirection:"column", alignItems:"center", gap:10, minWidth:0}}>
                   <Keycap state={state} style={{width:"100%", maxWidth:64}} glyphSize={18}/>
-                  <span style={{fontFamily:MONO, fontSize:8.5, letterSpacing:1.5, color:FAINT, textAlign:"center"}}>{label}</span>
+                  <span className="tile-lbl" style={{fontFamily:MONO, fontSize:8.5, letterSpacing:1.5, color:FAINT, textAlign:"center"}}>{label}</span>
                 </div>
               ))}
             </div>
           </div>
-          <div style={{...CARD, padding:"20px 22px", display:"flex", flexDirection:"column", gap:18}}>
+          <div className="state-card" style={{...CARD, padding:"20px 22px", display:"flex", flexDirection:"column", gap:18}}>
             <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", gap:10}}>
               <span style={{fontFamily:MONO, fontSize:10, fontWeight:700, letterSpacing:3, color:MUTED}}>WINNER REVEAL</span>
               <span style={{fontFamily:MONO, fontSize:8.5, letterSpacing:1.5, color:FAINT, border:"1px solid rgba(148,178,255,0.12)", borderRadius:999, padding:"3px 9px"}}>SIMULATION</span>
@@ -308,7 +308,7 @@ export default function HomePage() {
       <Divider/>
 
       {/* ── HOW IT WORKS ── */}
-      <section id="how-section" style={{position:"relative", zIndex:5, padding:"60px 20px", maxWidth:1080, margin:"0 auto"}}>
+      <section id="how-section" className="sec-pad" style={{position:"relative", zIndex:5, padding:"60px 20px", maxWidth:1080, margin:"0 auto"}}>
         <div style={{textAlign:"center", marginBottom:40}}>
           <div style={{fontFamily:MONO, fontSize:10, letterSpacing:3, color:ACCENT, fontWeight:700, marginBottom:10}}>HOW IT WORKS</div>
           <div style={{fontFamily:BALOO, fontSize:28, fontWeight:700, color:TXT}}>Four Steps to Win</div>
@@ -333,7 +333,7 @@ export default function HomePage() {
       <Divider/>
 
       {/* ── MECHANICS ── */}
-      <section style={{position:"relative", zIndex:5, padding:"60px 20px", maxWidth:1080, margin:"0 auto"}}>
+      <section className="sec-pad" style={{position:"relative", zIndex:5, padding:"60px 20px", maxWidth:1080, margin:"0 auto"}}>
         <div style={{textAlign:"center", marginBottom:40}}>
           <div style={{fontFamily:MONO, fontSize:10, letterSpacing:3, color:ACCENT, fontWeight:700, marginBottom:10}}>GAME MECHANICS</div>
           <div style={{fontFamily:BALOO, fontSize:28, fontWeight:700, color:TXT}}>Know the Rules</div>
@@ -363,8 +363,8 @@ export default function HomePage() {
       <Divider/>
 
       {/* ── PROVABLY FAIR ── */}
-      <section style={{position:"relative", zIndex:5, padding:"60px 20px", maxWidth:1080, margin:"0 auto"}}>
-        <div style={{...CARD, padding:"34px 30px", display:"flex", flexDirection:"column", gap:32}}>
+      <section className="sec-pad" style={{position:"relative", zIndex:5, padding:"60px 20px", maxWidth:1080, margin:"0 auto"}}>
+        <div className="fair-card" style={{...CARD, padding:"34px 30px", display:"flex", flexDirection:"column", gap:32}}>
           <div style={{display:"flex", flexDirection:"column", gap:14}}>
             <div style={{fontFamily:MONO, fontSize:10, letterSpacing:3, color:ACCENT, fontWeight:700}}>PROVABLY FAIR</div>
             <div style={{fontFamily:BALOO, fontSize:24, fontWeight:700, color:TXT, lineHeight:1.3}}>Distributed Randomness Every Round</div>
@@ -391,16 +391,16 @@ export default function HomePage() {
       </section>
 
       {/* Footer */}
-      <footer style={{display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:12, padding:"18px 24px", borderTop:"1px solid rgba(148,178,255,0.08)", background:"rgba(6,11,28,0.95)", zIndex:10, position:"relative"}}>
+      <footer className="sec-pad" style={{display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:12, padding:"18px 24px", borderTop:"1px solid rgba(148,178,255,0.08)", background:"rgba(6,11,28,0.95)", zIndex:10, position:"relative"}}>
         <div style={{display:"flex", alignItems:"center", gap:8}}>
           <GriddyMark size={18}/>
           <span style={{fontFamily:BALOO, fontSize:13, fontWeight:800, color:"#F4F7FF", letterSpacing:1}}>GRIDDY</span>
         </div>
         <div style={{display:"flex", gap:14, alignItems:"center", flexWrap:"wrap"}}>
           {process.env.NEXT_PUBLIC_GRIDDY_ADDR && (
-            <a href={`https://testnet.arcscan.app/address/${process.env.NEXT_PUBLIC_GRIDDY_ADDR}`} target="_blank" rel="noopener noreferrer" className="foot-link" style={{fontFamily:MONO, fontSize:10, color:FAINT, textDecoration:"none", letterSpacing:1.5, transition:"color 0.2s"}}>CONTRACT</a>
+            <a href={`https://testnet.arcscan.app/address/${process.env.NEXT_PUBLIC_GRIDDY_ADDR}`} target="_blank" rel="noopener noreferrer" className="foot-link" style={{fontFamily:MONO, fontSize:10, color:FAINT, textDecoration:"none", letterSpacing:1.5, transition:"color 0.2s", padding:"15px 8px", margin:"-15px -8px"}}>CONTRACT</a>
           )}
-          <a href="https://drand.love" target="_blank" rel="noopener noreferrer" className="foot-link" style={{fontFamily:MONO, fontSize:10, color:FAINT, textDecoration:"none", letterSpacing:1.5, transition:"color 0.2s"}}>DRAND</a>
+          <a href="https://drand.love" target="_blank" rel="noopener noreferrer" className="foot-link" style={{fontFamily:MONO, fontSize:10, color:FAINT, textDecoration:"none", letterSpacing:1.5, transition:"color 0.2s", padding:"15px 8px", margin:"-15px -8px"}}>DRAND</a>
         </div>
         <div style={{fontFamily:MONO, fontSize:9, color:FAINT, letterSpacing:2}}>SIMPLE GAME. REAL STAKES. ONCHAIN.</div>
       </footer>
@@ -422,18 +422,26 @@ export default function HomePage() {
         input::placeholder{color:#2E3F66}
         .hero-cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;align-items:start}
         .states-band{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:20px;align-items:stretch}
-        .steps-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
-        .two-col-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+        .steps-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
+        .two-col-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
         @media(max-width:920px){
           .hero-cols{grid-template-columns:minmax(0,1fr);max-width:min(480px,100%);margin:0 auto}
-          .states-band{grid-template-columns:1fr}
-          .steps-grid{grid-template-columns:1fr 1fr}
+          .states-band{grid-template-columns:minmax(0,1fr)}
+          .steps-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
         }
         @media(max-width:700px){
-          .two-col-grid{grid-template-columns:1fr}
+          .two-col-grid{grid-template-columns:minmax(0,1fr)}
+        }
+        @media(max-width:480px){
+          .sec-pad{padding-left:14px!important;padding-right:14px!important}
+          .hero-tag{letter-spacing:2px!important}
+          .state-card{padding:16px 14px!important}
+          .tile-states-grid{gap:8px!important}
+          .tile-lbl{font-size:7.5px!important;letter-spacing:1px!important}
+          .fair-card{padding:24px 18px!important}
         }
         @media(max-width:460px){
-          .steps-grid{grid-template-columns:1fr}
+          .steps-grid{grid-template-columns:minmax(0,1fr)}
         }
       `}</style>
     </div>
