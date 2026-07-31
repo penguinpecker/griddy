@@ -122,6 +122,9 @@ const fmt = (v, d = 4) => {
 };
 // Spendable max: truncate (never round up) and keep gas back
 const GAS_RESERVE = 50000000000000000n; // ~$0.05 — Arc gas runs ~20 gwei so a typical tx costs ~$0.004; the reserve keeps withdrawals from stranding the wallet
+// Arc blocks are sub-second; a fat priority fee buys next-block inclusion for ~$0.002 extra
+const TX_TIP = 10_000_000_000n; // 10 gwei
+const TX_MAX_FEE = 60_000_000_000n; // 60 gwei cap (base runs ~20 gwei)
 const maxWithdraw = (bal) => {
   const b = BigInt(bal || 0);
   const spend = b > GAS_RESERVE ? b - GAS_RESERVE : 0n;
@@ -701,11 +704,11 @@ export default function TheGrid() {
         args: [BigInt(round), [cellIndex], [amountWei]],
       });
       const receipt = await sendTransaction(
-        { to: GRID_ADDR, data, value: amountWei, chainId: CHAIN_ID },
+        { to: GRID_ADDR, data, value: amountWei, chainId: CHAIN_ID, maxPriorityFeePerGas: TX_TIP, maxFeePerGas: TX_MAX_FEE },
         { sponsor: GAS_SPONSOR }
       );
       addFeed(`◈ Staking $${fmt(amountWei)} on ${CELL_LABELS[cellIndex]}...`);
-      await publicClient.waitForTransactionReceipt({ hash: receipt.hash });
+      await publicClient.waitForTransactionReceipt({ hash: receipt.hash, pollingInterval: 800 });
       addFeed(`✓ $${fmt(amountWei)} on ${CELL_LABELS[cellIndex]}`);
       setSelectedCell(null);
       pollState();
@@ -723,8 +726,8 @@ export default function TheGrid() {
     setClaiming(true);
     try {
       const data = encodeFunctionData({ abi: GRID_ABI, functionName: "withdrawWinnings", args: [] });
-      const receipt = await sendTransaction({ to: GRID_ADDR, data, chainId: CHAIN_ID }, { sponsor: GAS_SPONSOR });
-      await publicClient.waitForTransactionReceipt({ hash: receipt.hash });
+      const receipt = await sendTransaction({ to: GRID_ADDR, data, chainId: CHAIN_ID, maxPriorityFeePerGas: TX_TIP, maxFeePerGas: TX_MAX_FEE }, { sponsor: GAS_SPONSOR });
+      await publicClient.waitForTransactionReceipt({ hash: receipt.hash, pollingInterval: 800 });
       addFeed(`✓ Escrowed winnings claimed`);
       pollState();
     } catch (e) {
@@ -765,11 +768,11 @@ export default function TheGrid() {
     try {
       // native USDC transfer (Arc's gas token)
       const receipt = await sendTransaction(
-        { to: withdrawAddr.trim(), value: parseEther(withdrawAmt), chainId: CHAIN_ID },
+        { to: withdrawAddr.trim(), value: parseEther(withdrawAmt), chainId: CHAIN_ID, maxPriorityFeePerGas: TX_TIP, maxFeePerGas: TX_MAX_FEE },
         { sponsor: GAS_SPONSOR }
       );
       addFeed(`↗ Withdrawing $${withdrawAmt}...`);
-      await publicClient.waitForTransactionReceipt({ hash: receipt.hash });
+      await publicClient.waitForTransactionReceipt({ hash: receipt.hash, pollingInterval: 800 });
       addFeed(`✓ Withdrawn $${withdrawAmt}`);
       setWithdrawSuccess(`✓ Sent $${withdrawAmt} · ${receipt.hash.slice(0,10)}...${receipt.hash.slice(-6)}`);
       setWithdrawAddr("");

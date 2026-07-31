@@ -124,27 +124,29 @@ let lastKnownRoundId = null;
 // keeps logging instead of wedging silently on an API change or drand halt.
 async function fetchBeacon(round, deadlineMs = 60_000) {
   const until = Date.now() + deadlineMs;
+  let lastLog = 0;
   while (Date.now() < until) {
-    for (const base of DRAND_MIRRORS) {
-      try {
-        const res = await fetch(`${base}/public/${round}`, { signal: AbortSignal.timeout(4000) });
-        if (res.status === 425 || res.status === 404) break; // not emitted yet — wait, don't rotate
-        if (!res.ok) {
-          log(`drand ${base} status ${res.status}`);
-          continue;
-        }
-        const body = await res.json();
-        if (body.round !== round || !/^[0-9a-f]{128}$/.test(body.signature)) {
-          log(`drand ${base} shape mismatch: round=${body.round} sigLen=${String(body.signature).length}`);
-          continue;
-        }
-        return [BigInt("0x" + body.signature.slice(0, 64)), BigInt("0x" + body.signature.slice(64))];
-      } catch (e) {
-        log(`drand ${base} error: ${e.message}`);
-        continue; // mirror down — try next
+    // Race every mirror in parallel — resolution latency matters more than
+    // the three extra HTTP requests once per round.
+    const attempts = DRAND_MIRRORS.map(async (base) => {
+      const res = await fetch(`${base}/public/${round}`, { signal: AbortSignal.timeout(4000) });
+      if (!res.ok) throw new Error(`${base} status ${res.status}`);
+      const body = await res.json();
+      if (body.round !== round || !/^[0-9a-f]{128}$/.test(body.signature)) {
+        throw new Error(`${base} shape mismatch: round=${body.round}`);
+      }
+      return [BigInt("0x" + body.signature.slice(0, 64)), BigInt("0x" + body.signature.slice(64))];
+    });
+    try {
+      return await Promise.any(attempts);
+    } catch (e) {
+      if (Date.now() - lastLog > 2000) {
+        lastLog = Date.now();
+        log(`drand round ${round} not served yet (${e.errors?.[0]?.message || e.message})`);
       }
     }
-    await sleep(250);  }
+    await sleep(250);
+  }
   log(`drand round ${round} not obtained within ${deadlineMs}ms — will retry`);
   return null;
 }
@@ -215,12 +217,18 @@ setInterval(async () => {
 
 // Nonce/fees can be staged BEFORE the beacon exists so the post-beacon path
 // is a single sign + broadcast (latency-critical for fast resolution).
+// Resolution is latency-critical: pay a fat tip (blocks are sub-second, so
+// this buys next-block inclusion even under load; ~$0.004 extra per resolve).
+const MIN_TIP = 10_000_000_000n; // 10 gwei
 async function stageTx() {
   const [nonce, fees] = await Promise.all([
     publicClient.getTransactionCount({ address: account.address }),
     publicClient.estimateFeesPerGas(),
   ]);
-  return { nonce, ...fees, gas: 12_000_000n };
+  const estTip = fees.maxPriorityFeePerGas ?? 0n;
+  const tip = estTip * 3n > MIN_TIP ? estTip * 3n : MIN_TIP;
+  const maxFee = (fees.maxFeePerGas ?? 0n) + tip;
+  return { nonce, maxPriorityFeePerGas: tip, maxFeePerGas: maxFee, gas: 12_000_000n };
 }
 
 async function sendResolve(fn, roundId, args, staged) {
@@ -243,9 +251,10 @@ async function sendResolve(fn, roundId, args, staged) {
       abi: ABI,
       functionName: fn,
       args,
+      maxPriorityFeePerGas: MIN_TIP,
     });
   }
-  const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 60_000 });
+  const receipt = await publicClient.waitForTransactionReceipt({ hash, timeout: 60_000, pollingInterval: 800 });
   if (receipt.status !== "success") throw new Error(`${fn} reverted: ${hash}`);
   return hash;
 }
