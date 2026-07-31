@@ -4,7 +4,7 @@
 Stake USDC on a 5×5 grid. A distributed randomness beacon picks the winning
 cell. Winners split the pot in proportion to what they staked.
 
-**[▶ Play](https://griddy-two.vercel.app)** · [Contract](https://explorer.testnet.arc.network/address/0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c) · [drand](https://drand.love)
+**[▶ Play](https://griddy-two.vercel.app)** · [Contract](https://testnet.arcscan.app/address/0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c) · [drand](https://drand.love)
 
 Griddy runs on Arc — Circle's chain, where the **native gas token is USDC** —
 so the game stakes it directly via `msg.value`, with no token approvals. (Arc
@@ -65,9 +65,9 @@ Live on **Arc Testnet** (chainId 5042002 · RPC `https://rpc.testnet.arc.network
 
 | Contract | Address |
 | --- | --- |
-| GriddyV4 (UUPS proxy) | [`0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c`](https://explorer.testnet.arc.network/address/0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c) |
+| GriddyV4 (UUPS proxy) | [`0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c`](https://testnet.arcscan.app/address/0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c) |
 | GriddyV4 implementation | `0xC5c53BB4A93bCe76b99c726FFA1173Be31f14d8d` |
-| DrandBeacon | [`0x73d7D306F5AE49a60c70C8Cf0331F1DA65E6cD2A`](https://explorer.testnet.arc.network/address/0x73d7D306F5AE49a60c70C8Cf0331F1DA65E6cD2A) |
+| DrandBeacon | [`0x73d7D306F5AE49a60c70C8Cf0331F1DA65E6cD2A`](https://testnet.arcscan.app/address/0x73d7D306F5AE49a60c70C8Cf0331F1DA65E6cD2A) |
 
 Full record in `contracts/deployments/griddy-arc-testnet.json`. Arc's
 precompiles were probe-verified against a real drand beacon before deploy
@@ -131,11 +131,11 @@ prove the cryptography, not a mock:
 cd contracts && npm install && npx hardhat test
 ```
 
-**Deploy** (Arc testnet; a mainnet target requires an explicit confirmation
-flag and runs post-deploy assertions before it will report success):
+**Deploy** (Arc testnet; runs post-deploy assertions and fails loudly rather
+than leave a half-wired game):
 
 ```bash
-PRIVATE_KEY=0x… npx hardhat run scripts/deploy-griddy-v2.ts --network arc-testnet
+PRIVATE_KEY=0x… npx hardhat run scripts/deploy-griddy-arc.ts --network arc-testnet
 ```
 
 **Keeper** — resolves rounds and serves the live event feed. It holds no
@@ -144,7 +144,7 @@ tip makes it self-funding.
 
 ```bash
 cd services/keeper && npm install
-PRIVATE_KEY=0x… GRIDDY_ADDRESS=0x… CHAIN_ID=5042002 \
+PRIVATE_KEY=0x… GRIDDY_ADDRESS=0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c CHAIN_ID=5042002 \
   RPC_URL=https://rpc.testnet.arc.network npm start
 ```
 

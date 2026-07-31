@@ -398,7 +398,7 @@ export default function HomePage() {
         </div>
         <div style={{display:"flex", gap:14, alignItems:"center", flexWrap:"wrap"}}>
           {process.env.NEXT_PUBLIC_GRIDDY_ADDR && (
-            <a href={`https://explorer.testnet.arc.network/address/${process.env.NEXT_PUBLIC_GRIDDY_ADDR}`} target="_blank" rel="noopener noreferrer" className="foot-link" style={{fontFamily:MONO, fontSize:10, color:FAINT, textDecoration:"none", letterSpacing:1.5, transition:"color 0.2s"}}>CONTRACT</a>
+            <a href={`https://testnet.arcscan.app/address/${process.env.NEXT_PUBLIC_GRIDDY_ADDR}`} target="_blank" rel="noopener noreferrer" className="foot-link" style={{fontFamily:MONO, fontSize:10, color:FAINT, textDecoration:"none", letterSpacing:1.5, transition:"color 0.2s"}}>CONTRACT</a>
           )}
           <a href="https://drand.love" target="_blank" rel="noopener noreferrer" className="foot-link" style={{fontFamily:MONO, fontSize:10, color:FAINT, textDecoration:"none", letterSpacing:1.5, transition:"color 0.2s"}}>DRAND</a>
         </div>

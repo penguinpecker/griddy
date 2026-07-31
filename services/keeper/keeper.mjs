@@ -55,7 +55,7 @@ export const gameChain = defineChain({
   nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
   rpcUrls: { default: { http: [RPC_URL] } },
   blockExplorers: {
-    default: { name: "Arc Explorer", url: "https://explorer.testnet.arc.network" },
+    default: { name: "Arc Explorer", url: "https://testnet.arcscan.app" },
   },
 });
 

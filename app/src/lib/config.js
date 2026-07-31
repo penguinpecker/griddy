@@ -9,7 +9,7 @@ export const RPC_URL =
   process.env.NEXT_PUBLIC_RPC_URL || "https://rpc.testnet.arc.network";
 
 export const EXPLORER =
-  process.env.NEXT_PUBLIC_EXPLORER || "https://explorer.testnet.arc.network";
+  process.env.NEXT_PUBLIC_EXPLORER || "https://testnet.arcscan.app";
 
 export const GRID_ADDR =
   process.env.NEXT_PUBLIC_GRIDDY_ADDR || "0x0000000000000000000000000000000000000000";

@@ -130,7 +130,7 @@ async function main() {
   };
   console.log(`\n  P2 balance delta: $${ethers.formatEther(after.p2 - before.p2)}`);
   console.log(`  P3 balance delta: $${ethers.formatEther(after.p3 - before.p3)}`);
-  console.log(`\nExplorer: https://explorer.testnet.arc.network/address/${dep.griddy}`);
+  console.log(`\nExplorer: https://testnet.arcscan.app/address/${dep.griddy}`);
 }
 
 main().catch((e) => {
