@@ -53,12 +53,25 @@ async function main() {
   }
   console.log(`P1 ${deployer.address}\nP2 ${p2.address}\nP3 ${p3.address}`);
 
-  // Wait for a round with room to stake
+  // Wait for a round with room to stake. Rounds only roll over on
+  // resolution, so with no keeper running an expired round sits unresolved
+  // forever — resolve it ourselves to open a fresh one.
   let roundId = await griddy.currentRoundId();
   for (;;) {
     const r = await griddy.rounds(roundId);
     const now = Math.floor(Date.now() / 1000);
     if (!r.resolved && Number(r.endTime) - now > 15) break;
+    if (!r.resolved && now > Number(r.endTime) + Number(dep.params.beaconGap ?? 10)) {
+      if (r.totalStakers === 0n) {
+        console.log(`Round ${roundId} expired empty — skipEmptyRound() to open a fresh round...`);
+        await (await griddy.skipEmptyRound(roundId)).wait();
+      } else {
+        console.log(`Round ${roundId} expired unresolved — resolving it to open a fresh round...`);
+        const staleSig = await fetchBeacon(Number(r.drandRound));
+        await (await griddy.resolveRound(roundId, staleSig)).wait();
+      }
+      console.log(`  done.`);
+    }
     await new Promise((res) => setTimeout(res, 3000));
     roundId = await griddy.currentRoundId();
   }

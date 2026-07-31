@@ -59,9 +59,19 @@ collect the tip.
 
 ## Deployment
 
-Not deployed yet. Contract addresses will be added here once the game is
-live on Arc Testnet (chainId 5042002 · RPC `https://rpc.testnet.arc.network` ·
-explorer `https://explorer.testnet.arc.network`).
+Live on **Arc Testnet** (chainId 5042002 · RPC `https://rpc.testnet.arc.network`):
+
+| Contract | Address |
+| --- | --- |
+| GriddyV4 (UUPS proxy) | [`0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c`](https://explorer.testnet.arc.network/address/0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c) |
+| GriddyV4 implementation | `0xC5c53BB4A93bCe76b99c726FFA1173Be31f14d8d` |
+| DrandBeacon | [`0x73d7D306F5AE49a60c70C8Cf0331F1DA65E6cD2A`](https://explorer.testnet.arc.network/address/0x73d7D306F5AE49a60c70C8Cf0331F1DA65E6cD2A) |
+
+Full record in `contracts/deployments/griddy-arc-testnet.json`. Arc's
+precompiles were probe-verified against a real drand beacon before deploy
+(`contracts/scripts/probe-arc-precompiles.ts`), and a complete round —
+uneven stakes, on-chain BLS verification, exact 95% pro-rata auto-payout —
+was played end-to-end with `contracts/scripts/smoke-arc.ts`.
 
 ## Parameters
 

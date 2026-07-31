@@ -1,0 +1,500 @@
+{
+  "manifestVersion": "3.2",
+  "proxies": [
+    {
+      "address": "0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c",
+      "txHash": "0xad0be25fa0573d1435aa99f7bb4ff71c83100acf74c69eee59102f5b5fdd0c3b",
+      "kind": "uups"
+    }
+  ],
+  "impls": {
+    "8d8b3310da536862c418485e4ff8c5d313aa23bb81dab707da922600b2c12012": {
+      "address": "0xC5c53BB4A93bCe76b99c726FFA1173Be31f14d8d",
+      "txHash": "0x39d53d80cd4a415ef0fc800aa6d85298f1f7900e77a77366f4994721a249272e",
+      "layout": {
+        "solcVersion": "0.8.28",
+        "storage": [
+          {
+            "label": "griddyToken_retired",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_address",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:63",
+            "renamedFrom": "griddyToken"
+          },
+          {
+            "label": "beacon",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_contract(DrandBeacon)16464",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:64"
+          },
+          {
+            "label": "feeRecipient",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_address",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:65"
+          },
+          {
+            "label": "minStakeWei",
+            "offset": 0,
+            "slot": "3",
+            "type": "t_uint256",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:66"
+          },
+          {
+            "label": "roundDuration",
+            "offset": 0,
+            "slot": "4",
+            "type": "t_uint256",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:67"
+          },
+          {
+            "label": "beaconGap",
+            "offset": 0,
+            "slot": "5",
+            "type": "t_uint256",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:68"
+          },
+          {
+            "label": "protocolFeeBps",
+            "offset": 0,
+            "slot": "6",
+            "type": "t_uint256",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:69"
+          },
+          {
+            "label": "resolverTipWei",
+            "offset": 0,
+            "slot": "7",
+            "type": "t_uint256",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:70"
+          },
+          {
+            "label": "griddyPerRound_retired",
+            "offset": 0,
+            "slot": "8",
+            "type": "t_uint256",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:73",
+            "renamedFrom": "griddyPerRound"
+          },
+          {
+            "label": "motherlodePerRound_retired",
+            "offset": 0,
+            "slot": "9",
+            "type": "t_uint256",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:75",
+            "renamedFrom": "motherlodePerRound"
+          },
+          {
+            "label": "bonusRoundOdds_retired",
+            "offset": 0,
+            "slot": "10",
+            "type": "t_uint256",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:77",
+            "renamedFrom": "bonusRoundOdds"
+          },
+          {
+            "label": "bonusMultiplier_retired",
+            "offset": 0,
+            "slot": "11",
+            "type": "t_uint256",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:79",
+            "renamedFrom": "bonusMultiplier"
+          },
+          {
+            "label": "bonusReserveBps_retired",
+            "offset": 0,
+            "slot": "12",
+            "type": "t_uint256",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:81",
+            "renamedFrom": "bonusReserveBps"
+          },
+          {
+            "label": "currentRoundId",
+            "offset": 0,
+            "slot": "13",
+            "type": "t_uint256",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:82"
+          },
+          {
+            "label": "accumulatedFees",
+            "offset": 0,
+            "slot": "14",
+            "type": "t_uint256",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:83"
+          },
+          {
+            "label": "pendingRefunds",
+            "offset": 0,
+            "slot": "15",
+            "type": "t_uint256",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:84"
+          },
+          {
+            "label": "pendingWithdrawals",
+            "offset": 0,
+            "slot": "16",
+            "type": "t_uint256",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:85"
+          },
+          {
+            "label": "bonusReserve_retired",
+            "offset": 0,
+            "slot": "17",
+            "type": "t_uint256",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:87",
+            "renamedFrom": "bonusReserve"
+          },
+          {
+            "label": "paused",
+            "offset": 0,
+            "slot": "18",
+            "type": "t_bool",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:90"
+          },
+          {
+            "label": "rounds",
+            "offset": 0,
+            "slot": "19",
+            "type": "t_mapping(t_uint256,t_struct(Round)13198_storage)",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:104"
+          },
+          {
+            "label": "cellTotal",
+            "offset": 0,
+            "slot": "20",
+            "type": "t_mapping(t_uint256,t_mapping(t_uint8,t_uint256))",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:105"
+          },
+          {
+            "label": "cellStakers",
+            "offset": 0,
+            "slot": "21",
+            "type": "t_mapping(t_uint256,t_mapping(t_uint8,t_array(t_address)dyn_storage))",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:106"
+          },
+          {
+            "label": "stakeOf",
+            "offset": 0,
+            "slot": "22",
+            "type": "t_mapping(t_uint256,t_mapping(t_uint8,t_mapping(t_address,t_uint256)))",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:107"
+          },
+          {
+            "label": "playerTotalStaked",
+            "offset": 0,
+            "slot": "23",
+            "type": "t_mapping(t_uint256,t_mapping(t_address,t_uint256))",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:108"
+          },
+          {
+            "label": "roundVoided",
+            "offset": 0,
+            "slot": "24",
+            "type": "t_mapping(t_uint256,t_bool)",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:109"
+          },
+          {
+            "label": "refunded",
+            "offset": 0,
+            "slot": "25",
+            "type": "t_mapping(t_uint256,t_mapping(t_address,t_bool))",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:110"
+          },
+          {
+            "label": "voidRequestedAt",
+            "offset": 0,
+            "slot": "26",
+            "type": "t_mapping(t_uint256,t_uint64)",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:111"
+          },
+          {
+            "label": "unclaimedWinnings",
+            "offset": 0,
+            "slot": "27",
+            "type": "t_mapping(t_address,t_uint256)",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:112"
+          },
+          {
+            "label": "__gap",
+            "offset": 0,
+            "slot": "28",
+            "type": "t_array(t_uint256)50_storage",
+            "contract": "GriddyV4",
+            "src": "src/GriddyV4.sol:113"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_struct(InitializableStorage)402_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(Ownable2StepStorage)13_storage": {
+            "label": "struct Ownable2StepUpgradeable.Ownable2StepStorage",
+            "members": [
+              {
+                "label": "_pendingOwner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)68_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_address)dyn_storage": {
+            "label": "address[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_uint256)50_storage": {
+            "label": "uint256[50]",
+            "numberOfBytes": "1600"
+          },
+          "t_contract(DrandBeacon)16464": {
+            "label": "contract DrandBeacon",
+            "numberOfBytes": "20"
+          },
+          "t_mapping(t_address,t_bool)": {
+            "label": "mapping(address => bool)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_uint256)": {
+            "label": "mapping(address => uint256)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_bool)": {
+            "label": "mapping(uint256 => bool)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_mapping(t_address,t_bool))": {
+            "label": "mapping(uint256 => mapping(address => bool))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_mapping(t_address,t_uint256))": {
+            "label": "mapping(uint256 => mapping(address => uint256))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_mapping(t_uint8,t_array(t_address)dyn_storage))": {
+            "label": "mapping(uint256 => mapping(uint8 => address[]))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_mapping(t_uint8,t_mapping(t_address,t_uint256)))": {
+            "label": "mapping(uint256 => mapping(uint8 => mapping(address => uint256)))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_mapping(t_uint8,t_uint256))": {
+            "label": "mapping(uint256 => mapping(uint8 => uint256))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_struct(Round)13198_storage)": {
+            "label": "mapping(uint256 => struct GriddyV4.Round)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_uint64)": {
+            "label": "mapping(uint256 => uint64)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint8,t_array(t_address)dyn_storage)": {
+            "label": "mapping(uint8 => address[])",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint8,t_mapping(t_address,t_uint256))": {
+            "label": "mapping(uint8 => mapping(address => uint256))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint8,t_uint256)": {
+            "label": "mapping(uint8 => uint256)",
+            "numberOfBytes": "32"
+          },
+          "t_struct(Round)13198_storage": {
+            "label": "struct GriddyV4.Round",
+            "members": [
+              {
+                "label": "startTime",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "endTime",
+                "type": "t_uint64",
+                "offset": 8,
+                "slot": "0"
+              },
+              {
+                "label": "drandRound",
+                "type": "t_uint64",
+                "offset": 16,
+                "slot": "0"
+              },
+              {
+                "label": "winningCell",
+                "type": "t_uint8",
+                "offset": 24,
+                "slot": "0"
+              },
+              {
+                "label": "resolved",
+                "type": "t_bool",
+                "offset": 25,
+                "slot": "0"
+              },
+              {
+                "label": "isBonusRound",
+                "type": "t_bool",
+                "offset": 26,
+                "slot": "0"
+              },
+              {
+                "label": "totalStaked",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "totalStakers",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "winnerTotal",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "distributable",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "griddyBase",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "5"
+              }
+            ],
+            "numberOfBytes": "192"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint8": {
+            "label": "uint8",
+            "numberOfBytes": "1"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.Ownable2Step": [
+            {
+              "contract": "Ownable2StepUpgradeable",
+              "label": "_pendingOwner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol:29",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    }
+  }
+}
