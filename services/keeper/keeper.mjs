@@ -75,7 +75,8 @@ const account = privateKeyToAccount(process.env.PRIVATE_KEY);
 const publicClient = createPublicClient({
   chain: gameChain,
   transport: viemHttp(RPC_URL),
-  pollingInterval: 500,
+  // Public Arc RPC rate-limits aggressive polling; 4s is plenty for 30s rounds
+  pollingInterval: 4000,
 });
 const walletClient = createWalletClient({ account, chain: gameChain, transport: viemHttp(RPC_URL) });
 // The sequencer endpoint is submission-only (rejects reads): when configured,
@@ -172,11 +173,23 @@ async function sb(path, method, body, extraPrefer = "") {
 }
 
 // ─── live entry feed → SSE ───
-publicClient.watchContractEvent({
-  address: GRIDDY_ADDRESS,
-  abi: ABI,
-  eventName: "Staked",
-  onLogs: (logs) => {
+// Arc's public RPC accepts eth_newFilter but errors on eth_getFilterChanges
+// (server-side filters don't survive), which breaks viem's watchContractEvent
+// in both modes — so poll Staked logs manually with a block cursor.
+let stakedCursor = 0n;
+setInterval(async () => {
+  try {
+    const tip = await publicClient.getBlockNumber();
+    if (stakedCursor === 0n) { stakedCursor = tip; return; }
+    if (tip <= stakedCursor) return;
+    const logs = await publicClient.getContractEvents({
+      address: GRIDDY_ADDRESS,
+      abi: ABI,
+      eventName: "Staked",
+      fromBlock: stakedCursor + 1n,
+      toBlock: tip,
+    });
+    stakedCursor = tip;
     for (const l of logs) {
       broadcast("cell_picked", {
         roundId: Number(l.args.roundId),
@@ -195,9 +208,10 @@ publicClient.watchContractEvent({
         pick_tx_hash: l.transactionHash,
       });
     }
-  },
-  onError: (e) => log("watch error:", e.message),
-});
+  } catch (e) {
+    log("staked poll error:", e.shortMessage || e.message);
+  }
+}, 5000);
 
 // Nonce/fees can be staged BEFORE the beacon exists so the post-beacon path
 // is a single sign + broadcast (latency-critical for fast resolution).
@@ -265,6 +279,15 @@ for (;;) {
     }
 
     if (totalStakers === 0n) {
+      // Gas guard: skipping an empty round costs a real tx (~$0.008 on Arc,
+      // where gas is USDC), and rounds tick every 30s — an unconditional
+      // skip burns ~$20/day with zero players. Only keep empty rounds
+      // rolling while somebody is actually watching (SSE clients); a
+      // viewer's page connects on load, which un-sticks the round for them.
+      if (sseClients.size === 0) {
+        await sleep(5000);
+        continue;
+      }
       const hash = await sendResolve("skipEmptyRound", roundId, [roundId]);
       log(`round ${roundId} empty — skipped (${hash})`);
       broadcast("round_resolved", { roundId: Number(roundId), skipped: true, txHash: hash });
@@ -345,6 +368,6 @@ for (;;) {
     log("loop error:", e.shortMessage || e.message);
     if (e.metaMessages?.length) log("  meta:", e.metaMessages.join(" | "));
     if (e.details) log("  details:", e.details);
-    await sleep(2000);
+    await sleep(10000);
   }
 }

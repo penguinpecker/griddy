@@ -4,6 +4,8 @@
 Stake USDC on a 5×5 grid. A distributed randomness beacon picks the winning
 cell. Winners split the pot in proportion to what they staked.
 
+**[▶ Play](https://griddy-two.vercel.app)** · [Contract](https://explorer.testnet.arc.network/address/0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c) · [drand](https://drand.love)
+
 Griddy runs on Arc — Circle's chain, where the **native gas token is USDC** —
 so the game stakes it directly via `msg.value`, with no token approvals. (Arc
 quirk: the native balance is 18-decimal; a 6-decimal ERC-20 view exists at
