@@ -211,7 +211,7 @@ setInterval(async () => {
   } catch (e) {
     log("staked poll error:", e.shortMessage || e.message);
   }
-}, 5000);
+}, 12000);
 
 // Nonce/fees can be staged BEFORE the beacon exists so the post-beacon path
 // is a single sign + broadcast (latency-critical for fast resolution).
@@ -274,7 +274,7 @@ for (;;) {
       continue;
     }
     if (resolved) {
-      await sleep(1000);
+      await sleep(4000);
       continue;
     }
 
@@ -285,7 +285,7 @@ for (;;) {
       // rolling while somebody is actually watching (SSE clients); a
       // viewer's page connects on load, which un-sticks the round for them.
       if (sseClients.size === 0) {
-        await sleep(5000);
+        await sleep(10000);
         continue;
       }
       const hash = await sendResolve("skipEmptyRound", roundId, [roundId]);
