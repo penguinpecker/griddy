@@ -1,12 +1,16 @@
 /**
  * Griddy keeper — permissionless drand resolver bot.
  *
- * Watches the Griddy contract on Arc testnet; when a round ends it fetches
- * the pinned drand evmnet beacon signature (public, verifiable) and calls
- * resolveRound(). The contract verifies the BLS signature on-chain, so this
- * bot holds no trust: anyone can run it, and the caller earns resolverReward.
- * Also serves the SSE event feed the frontend consumes and (optionally)
- * mirrors rounds into Supabase.
+ * Watches the Griddy contract on Arc testnet. V5 decouples rounds: betting
+ * rolls forward lazily when someone stakes, and ANY ended round with stakers
+ * is resolvable permissionlessly (not just the current one). The keeper walks
+ * a resolve cursor from just behind the head round; for each ended round with
+ * stakers it fetches the pinned drand evmnet beacon signature (public,
+ * verifiable) and calls resolveRound(). Empty ended rounds simply expire and
+ * never need a transaction. The contract verifies the BLS signature on-chain,
+ * so this bot holds no trust: anyone can run it, and the caller earns
+ * resolverReward. Also serves the SSE event feed the frontend consumes and
+ * (optionally) mirrors rounds into Supabase.
  *
  * Env:
  *   PRIVATE_KEY        keeper wallet (needs dust native USDC for gas)
@@ -23,12 +27,19 @@ import {
   createWalletClient,
   defineChain,
   encodeFunctionData,
+  fallback,
   http as viemHttp,
   parseAbi,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
-const RPC_URL = process.env.RPC_URL || "https://rpc.testnet.arc.network";
+// Comma-separated fallback list — the official public RPC rate-limits shared
+// cloud egress IPs (Railway) hard, so lean on public gateways first.
+const RPC_URLS = (
+  process.env.RPC_URLS || process.env.RPC_URL ||
+  "https://arc-testnet.drpc.org,https://5042002.rpc.thirdweb.com,https://rpc.testnet.arc.network"
+).split(",").map((s) => s.trim()).filter(Boolean);
+const RPC_URL = RPC_URLS[0];
 const SEQUENCER_RPC = process.env.SEQUENCER_RPC || RPC_URL;
 const GRIDDY_ADDRESS = process.env.GRIDDY_ADDRESS;
 const PORT = Number(process.env.PORT || 8787);
@@ -72,13 +83,14 @@ const ABI = parseAbi([
 ]);
 
 const account = privateKeyToAccount(process.env.PRIVATE_KEY);
+const rpcTransport = fallback(RPC_URLS.map((u) => viemHttp(u, { timeout: 8000 })));
 const publicClient = createPublicClient({
   chain: gameChain,
-  transport: viemHttp(RPC_URL),
-  // Public Arc RPC rate-limits aggressive polling; 4s is plenty for 30s rounds
+  transport: rpcTransport,
+  // Public Arc RPCs rate-limit aggressive polling; 4s is plenty for 30s rounds
   pollingInterval: 4000,
 });
-const walletClient = createWalletClient({ account, chain: gameChain, transport: viemHttp(RPC_URL) });
+const walletClient = createWalletClient({ account, chain: gameChain, transport: rpcTransport });
 // The sequencer endpoint is submission-only (rejects reads): when configured,
 // txs are prepared+signed against the regular RPC and only the raw broadcast
 // goes to the sequencer.
@@ -260,119 +272,126 @@ async function sendResolve(fn, roundId, args, staged) {
 }
 
 // ─── main loop ───
+// V5 continuous model: walk a resolve cursor from just behind the head round.
+// Resolved rounds and expired empty rounds only advance the cursor (empty
+// rounds need no transaction — they just expire); any ended round with
+// stakers gets resolved. Scanning is capped per iteration because the public
+// Arc RPC rate-limits, so a deep backlog catches up over a few loops.
+const MAX_SCAN_PER_ITER = 5;
+let resolveCursor = null;
 log(`Griddy keeper starting — contract ${GRIDDY_ADDRESS}, keeper ${account.address}`);
 for (;;) {
   try {
-    const roundId = await publicClient.readContract({
+    const currentId = await publicClient.readContract({
       address: GRIDDY_ADDRESS,
       abi: ABI,
       functionName: "currentRoundId",
     });
-    const round = await publicClient.readContract({
-      address: GRIDDY_ADDRESS,
-      abi: ABI,
-      functionName: "rounds",
-      args: [roundId],
-    });
-    const [, endTime, drandRound, , resolved, , , totalStakers] = round;
-
-    lastKnownRoundId = Number(roundId);
-    const now = Math.floor(Date.now() / 1000);
-    if (now < Number(endTime)) {
-      await sleep(Math.min((Number(endTime) - now) * 1000, 5000));
-      continue;
-    }
-    if (resolved) {
-      await sleep(4000);
-      continue;
+    lastKnownRoundId = Number(currentId);
+    if (resolveCursor === null) {
+      const back = currentId - 20n;
+      resolveCursor = back > 1n ? back : 1n;
+      log(`resolve cursor boots at round ${resolveCursor} (current ${currentId})`);
     }
 
-    if (totalStakers === 0n) {
-      // Gas guard: skipping an empty round costs a real tx (~$0.008 on Arc,
-      // where gas is USDC), and rounds tick every 30s — an unconditional
-      // skip burns ~$20/day with zero players. Only keep empty rounds
-      // rolling while somebody is actually watching (SSE clients); a
-      // viewer's page connects on load, which un-sticks the round for them.
-      if (sseClients.size === 0) {
-        await sleep(10000);
+    let idle = true;
+    let scanned = 0;
+    while (resolveCursor <= currentId && scanned < MAX_SCAN_PER_ITER) {
+      scanned++;
+      const roundId = resolveCursor;
+      const round = await publicClient.readContract({
+        address: GRIDDY_ADDRESS,
+        abi: ABI,
+        functionName: "rounds",
+        args: [roundId],
+      });
+      const [, endTime, drandRound, , resolved, , , totalStakers] = round;
+      const now = Math.floor(Date.now() / 1000);
+      const ended = now >= Number(endTime);
+
+      if (resolved || (ended && totalStakers === 0n)) {
+        // Nothing to do — already resolved, or expired empty (no tx ever needed)
+        resolveCursor = roundId + 1n;
         continue;
       }
-      const hash = await sendResolve("skipEmptyRound", roundId, [roundId]);
-      log(`round ${roundId} empty — skipped (${hash})`);
-      broadcast("round_resolved", { roundId: Number(roundId), skipped: true, txHash: hash });
-      continue;
-    }
+      if (!ended) break; // rounds end in id order; nothing past this is ready yet
 
-    // Stage nonce/gas/fees while waiting for the pinned beacon, then the
-    // post-beacon path is fetch → sign → broadcast with zero extra RPCs
-    const staged = await stageTx();
-    const beaconTime = DRAND_GENESIS + (Number(drandRound) - 1) * DRAND_PERIOD;
-    const now2 = Math.floor(Date.now() / 1000);
-    if (now2 < beaconTime) await sleep(Math.max(0, (beaconTime - now2) * 1000 - 500));
-    const sig = await fetchBeacon(Number(drandRound));
-    if (!sig) {
-      // drand appears to have missed the pinned round; once the contract's
-      // 5-minute timeout passes, re-pin to a fresh future beacon
-      if (Math.floor(Date.now() / 1000) > beaconTime + 300) {
-        try {
-          const h = await sendResolve("repinRound", roundId, [roundId]);
-          log(`round ${roundId} re-pinned to a later beacon (${h})`);
-        } catch (e) {
-          log("repin failed:", e.shortMessage || e.message);
+      // Ended with stakers and unresolved → resolve it.
+      // Stage nonce/gas/fees while waiting for the pinned beacon, then the
+      // post-beacon path is fetch → sign → broadcast with zero extra RPCs
+      const staged = await stageTx();
+      const beaconTime = DRAND_GENESIS + (Number(drandRound) - 1) * DRAND_PERIOD;
+      const now2 = Math.floor(Date.now() / 1000);
+      if (now2 < beaconTime) await sleep(Math.max(0, (beaconTime - now2) * 1000 - 500));
+      const sig = await fetchBeacon(Number(drandRound));
+      if (!sig) {
+        // drand appears to have missed the pinned round; once the contract's
+        // 5-minute timeout passes, re-pin to a fresh future beacon
+        if (Math.floor(Date.now() / 1000) > beaconTime + 300) {
+          try {
+            const h = await sendResolve("repinRound", roundId, [roundId]);
+            log(`round ${roundId} re-pinned to a later beacon (${h})`);
+          } catch (e) {
+            log("repin failed:", e.shortMessage || e.message);
+          }
         }
+        idle = false; // retry promptly; next pass re-reads state (incl. any new drandRound)
+        break;
       }
-      continue; // loop re-reads state (incl. any new drandRound) and retries
-    }
-    const hash = await sendResolve("resolveRound", roundId, [roundId, sig], staged);
+      const hash = await sendResolve("resolveRound", roundId, [roundId, sig], staged);
 
-    const after = await publicClient.readContract({
-      address: GRIDDY_ADDRESS,
-      abi: ABI,
-      functionName: "rounds",
-      args: [roundId],
-    });
-    const payload = {
-      roundId: Number(roundId),
-      skipped: false,
-      winningCell: Number(after[3]),
-      players: Number(after[7]),
-      txHash: hash,
-      drandRound: Number(drandRound),
-    };
-    log(`round ${roundId} resolved → cell ${payload.winningCell}${after[5] ? " MOTHERLODE" : ""} (${hash})`);
-    broadcast("round_resolved", payload);
-    if (after[5]) broadcast("bonus_round", { roundId: Number(roundId) });
-    // Column names match what the frontend reads (see schema.sql)
-    await sb("griddy_rounds?on_conflict=round_id", "POST", {
-      round_id: Number(roundId),
-      winning_cell: payload.winningCell,
-      total_staked_wei: after[6].toString(),
-      total_stakers: Number(after[7]),
-      winner_total_wei: after[8].toString(),
-      distributable_wei: after[9].toString(),
-      drand_round: Number(drandRound),
-      resolve_tx_hash: hash,
-    });
-    // Mark winners so user history shows won/lost correctly
-    const winners = await publicClient.readContract({
-      address: GRIDDY_ADDRESS,
-      abi: ABI,
-      functionName: "getCellStakers",
-      args: [roundId, payload.winningCell],
-    });
-    const winnerTotal = after[8], distributable = after[9];
-    for (const w of winners) {
-      const s = await publicClient.readContract({
-        address: GRIDDY_ADDRESS, abi: ABI, functionName: "stakeOf",
-        args: [roundId, payload.winningCell, w],
+      const after = await publicClient.readContract({
+        address: GRIDDY_ADDRESS,
+        abi: ABI,
+        functionName: "rounds",
+        args: [roundId],
       });
-      const payout = winnerTotal > 0n ? (distributable * s) / winnerTotal : 0n;
-      await sb(
-        `griddy_stakes?round_id=eq.${Number(roundId)}&player_address=eq.${w.toLowerCase()}&cell=eq.${payload.winningCell}`,
-        "PATCH",
-        { is_winner: true, payout_wei: payout.toString() }
-      );
+      const payload = {
+        roundId: Number(roundId),
+        skipped: false,
+        winningCell: Number(after[3]),
+        players: Number(after[7]),
+        txHash: hash,
+        drandRound: Number(drandRound),
+      };
+      log(`round ${roundId} resolved → cell ${payload.winningCell}${after[5] ? " MOTHERLODE" : ""} (${hash})`);
+      broadcast("round_resolved", payload);
+      if (after[5]) broadcast("bonus_round", { roundId: Number(roundId) });
+      // Column names match what the frontend reads (see schema.sql)
+      await sb("griddy_rounds?on_conflict=round_id", "POST", {
+        round_id: Number(roundId),
+        winning_cell: payload.winningCell,
+        total_staked_wei: after[6].toString(),
+        total_stakers: Number(after[7]),
+        winner_total_wei: after[8].toString(),
+        distributable_wei: after[9].toString(),
+        drand_round: Number(drandRound),
+        resolve_tx_hash: hash,
+      });
+      // Mark winners so user history shows won/lost correctly
+      const winners = await publicClient.readContract({
+        address: GRIDDY_ADDRESS,
+        abi: ABI,
+        functionName: "getCellStakers",
+        args: [roundId, payload.winningCell],
+      });
+      const winnerTotal = after[8], distributable = after[9];
+      for (const w of winners) {
+        const s = await publicClient.readContract({
+          address: GRIDDY_ADDRESS, abi: ABI, functionName: "stakeOf",
+          args: [roundId, payload.winningCell, w],
+        });
+        const payout = winnerTotal > 0n ? (distributable * s) / winnerTotal : 0n;
+        await sb(
+          `griddy_stakes?round_id=eq.${Number(roundId)}&player_address=eq.${w.toLowerCase()}&cell=eq.${payload.winningCell}`,
+          "PATCH",
+          { is_winner: true, payout_wei: payout.toString() }
+        );
+      }
+      resolveCursor = roundId + 1n;
+      idle = false;
     }
+    if (idle) await sleep(4000);
   } catch (e) {
     log("loop error:", e.shortMessage || e.message);
     if (e.metaMessages?.length) log("  meta:", e.metaMessages.join(" | "));

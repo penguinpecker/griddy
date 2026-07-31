@@ -53,25 +53,14 @@ async function main() {
   }
   console.log(`P1 ${deployer.address}\nP2 ${p2.address}\nP3 ${p3.address}`);
 
-  // Wait for a round with room to stake. Rounds only roll over on
-  // resolution, so with no keeper running an expired round sits unresolved
-  // forever — resolve it ourselves to open a fresh one.
+  // V5 continuous rounds: an expired betting round never rolls by itself —
+  // the first stake with the PREDICTED id (current+1) opens a fresh window.
   let roundId = await griddy.currentRoundId();
   for (;;) {
     const r = await griddy.rounds(roundId);
     const now = Math.floor(Date.now() / 1000);
-    if (!r.resolved && Number(r.endTime) - now > 15) break;
-    if (!r.resolved && now > Number(r.endTime) + Number(dep.params.beaconGap ?? 10)) {
-      if (r.totalStakers === 0n) {
-        console.log(`Round ${roundId} expired empty — skipEmptyRound() to open a fresh round...`);
-        await (await griddy.skipEmptyRound(roundId)).wait();
-      } else {
-        console.log(`Round ${roundId} expired unresolved — resolving it to open a fresh round...`);
-        const staleSig = await fetchBeacon(Number(r.drandRound));
-        await (await griddy.resolveRound(roundId, staleSig)).wait();
-      }
-      console.log(`  done.`);
-    }
+    if (now >= Number(r.endTime) || r.resolved) { roundId = roundId + 1n; break; }
+    if (Number(r.endTime) - now > 15) break;
     await new Promise((res) => setTimeout(res, 3000));
     roundId = await griddy.currentRoundId();
   }
@@ -106,9 +95,14 @@ async function main() {
 
   const sig = await fetchBeacon(Number(round.drandRound));
   console.log(`Fetched drand beacon #${round.drandRound}; submitting resolveRound...`);
-  const tx = await griddy.resolveRound(roundId, sig);
-  const rc = await tx.wait();
-  console.log(`resolveRound tx: ${rc?.hash}`);
+  try {
+    const tx = await griddy.resolveRound(roundId, sig);
+    const rc = await tx.wait();
+    console.log(`resolveRound tx: ${rc?.hash}`);
+  } catch (e: any) {
+    // A live keeper may have beaten us to it — fine, the round is resolved.
+    console.log(`resolveRound raced (${e.shortMessage || e.message}) — checking state...`);
+  }
 
   const r = await griddy.rounds(roundId);
   if (!r.resolved) throw new Error("round not resolved after resolveRound tx");

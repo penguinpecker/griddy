@@ -84,9 +84,14 @@ const GRID_ABI = [
 // "1000" renders as "1K" in the chip UI; the value string stays "1000" for parseEther.
 const STAKE_CHIPS = ["0.1", "1", "10", "100", "1000"];
 const MIN_STAKE_DEFAULT = 100000000000000n; // $0.0001 — fallback only; chain minStakeWei is the source of truth
-const ROUND_DURATION = 60;
+const ROUND_DURATION = 30; // V5: fresh 30s window — opened by the first stake after expiry
 const GRID_SIZE = 5;
 const TOTAL_CELLS = GRID_SIZE * GRID_SIZE;
+// Clean-slate views for the not-yet-opened next round (V5: an ended round
+// never rolls forward on its own — the first stake after expiry opens it)
+const EMPTY_COUNTS = new Array(TOTAL_CELLS).fill(0);
+const EMPTY_TOTALS = new Array(TOTAL_CELLS).fill(0n);
+const EMPTY_SET = new Set();
 const dbHeaders = { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` };
 
 const CELL_LABELS = [];
@@ -171,7 +176,6 @@ export default function TheGrid() {
   const [userHistoryLoading, setUserHistoryLoading] = useState(false);
   const userHistoryLoaded = useRef(false);
   const [scanLine, setScanLine] = useState(0);
-  const [scanCell, setScanCell] = useState(-1); // slot-machine sweep during resolve
   const [error, setError] = useState(null);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [showWithdraw, setShowWithdraw] = useState(false);
@@ -201,6 +205,7 @@ export default function TheGrid() {
   const lastRoundRef = useRef(0);
   const resolverCalledForRound = useRef(0);
   const resolvedRef = useRef(false);
+  const hasStakesRef = useRef(false);
 
   // ─── Refresh top of history table (picks up TX hash + drand round after resolution) ───
   const refreshHistoryTop = () => {
@@ -306,20 +311,6 @@ export default function TheGrid() {
     return () => clearInterval(iv);
   }, []);
 
-  // ─── Resolve sweep: roulette highlight over occupied cells while the
-  //     drand beacon is fetched + verified (~3s), lands when resolved ───
-  const resolvingNow = roundEnd > 0 && smoothTime <= 0 && !resolved && claimedCells.size > 0;
-  useEffect(() => {
-    if (!resolvingNow) { setScanCell(-1); return; }
-    const cells = [...claimedCells];
-    let i = 0;
-    const iv = setInterval(() => {
-      i = (i + 1) % cells.length;
-      setScanCell(cells[i]);
-    }, 110);
-    return () => clearInterval(iv);
-  }, [resolvingNow, claimedCells]);
-
   // ─── Poll Contract (uses OUR public client, not wallet) ───
   const pollError = useRef(null);
   const pollCount = useRef(0);
@@ -379,6 +370,7 @@ export default function TheGrid() {
         setRoundEnd(Number(rd[1]));
         setPotSize(rd[6].toString());
         setActivePlayers(Number(rd[7]));
+        hasStakesRef.current = Number(rd[7]) > 0;
         const isResolved = rd[4];
         setResolved(isResolved);
         resolvedRef.current = isResolved;
@@ -424,10 +416,11 @@ export default function TheGrid() {
     pollState();
     const tick = () => {
       pollState();
-      // Fast poll (500ms) while waiting for resolution, normal (3s) otherwise
-      // When SSE connected, slow to 10s as safety net
-      const resolving = roundEnd > 0 && Date.now() / 1000 > roundEnd && !resolvedRef.current;
-      const interval = sseConnected ? 10000 : (resolving ? 500 : 3000);
+      // Fast poll (500ms) only while an ended round WITH stakes awaits the
+      // keeper's reveal — an ended empty round is the normal idle state (V5),
+      // normal (3s) otherwise. When SSE connected, slow to 10s as safety net
+      const awaitingReveal = roundEnd > 0 && Date.now() / 1000 > roundEnd && !resolvedRef.current && hasStakesRef.current;
+      const interval = sseConnected ? 10000 : (awaitingReveal ? 500 : 3000);
       pollRef.current = setTimeout(tick, interval);
     };
     pollRef.current = setTimeout(tick, 3000);
@@ -621,13 +614,13 @@ export default function TheGrid() {
           const cell = Number(rd[3]);
           const pot = rd[6].toString();
           const isResolved = rd[4];
-          if (players > 0) {
+          if (players > 0 && isResolved) { // V3: cell 0 is valid
             const result = {
               roundId: prevRound,
               cell,
               players,
               pot,
-              resolved: isResolved,
+              resolved: true,
               txHash: resolverTxHash.current || null,
             };
             setLastResult(result);
@@ -635,14 +628,16 @@ export default function TheGrid() {
               if (prev.some(r => r.roundId === prevRound)) return prev;
               return [result, ...prev];
             });
-            if (isResolved && players > 0) { // V3: cell 0 is valid
-              addFeed(`★ Round ${prevRound} winner: Cell ${CELL_LABELS[cell] || cell}`);
-              setMoneyFlow(true);
-              setTimeout(() => setMoneyFlow(false), 2500);
-            } else if (players > 0 && !isResolved) {
-              addFeed(`⚠ Round ${prevRound} had ${players} player(s) but wasn't resolved`);
-            }
+            addFeed(`★ Round ${prevRound} winner: Cell ${CELL_LABELS[cell] || cell}`);
+            setMoneyFlow(true);
+            setTimeout(() => setMoneyFlow(false), 2500);
             setHistoryPage(0);
+          } else if (players > 0) {
+            // V5: normal — the keeper reveals an ended round ~8-12s after
+            // expiry while betting continues here; the history refresh picks
+            // up the winner + tx hash once the reveal lands
+            addFeed(`◈ Round ${prevRound} revealing — keeper resolving`);
+            setTimeout(refreshHistoryTop, 12000);
           }
           resolverTxHash.current = null;
         }).catch(e => console.error("Failed to fetch prev round:", e));
@@ -694,14 +689,19 @@ export default function TheGrid() {
 
   // ─── Stake USDC on a cell (native value, no approvals) ───
   const stakeOnCell = async (cellIndex, amountWei) => {
-    if (!wallet || claiming) return;
+    if (!wallet || claiming || round === 0 || roundEnd === 0) return;
     setClaiming(true);
     setError(null);
+    // V5: rounds never roll forward on their own. A live round takes stakes at
+    // its own id; once ended, the next stake must target round+1 (the contract
+    // lazily opens it, then checks the id)
+    const liveNow = Date.now() / 1000 < roundEnd;
+    const targetRoundId = liveNow ? round : round + 1;
     try {
       const data = encodeFunctionData({
         abi: GRID_ABI,
         functionName: "stake",
-        args: [BigInt(round), [cellIndex], [amountWei]],
+        args: [BigInt(targetRoundId), [cellIndex], [amountWei]],
       });
       const receipt = await sendTransaction(
         { to: GRID_ADDR, data, value: amountWei, chainId: CHAIN_ID, maxPriorityFeePerGas: TX_TIP, maxFeePerGas: TX_MAX_FEE },
@@ -711,6 +711,14 @@ export default function TheGrid() {
       await publicClient.waitForTransactionReceipt({ hash: receipt.hash, pollingInterval: 800 });
       addFeed(`✓ $${fmt(amountWei)} on ${CELL_LABELS[cellIndex]}`);
       setSelectedCell(null);
+      if (targetRoundId > round) {
+        // Our stake opened the next round — optimistically start its clock;
+        // the poll confirms the real startTime/endTime
+        const nowSec = Math.floor(Date.now() / 1000);
+        setRound(targetRoundId);
+        setRoundStart(nowSec);
+        setRoundEnd(nowSec + ROUND_DURATION);
+      }
       pollState();
     } catch (e) {
       const msg = e.shortMessage || e.message || "Transaction failed";
@@ -787,27 +795,51 @@ export default function TheGrid() {
   };
 
   // ─── Derived UI State ───
+  // V5 round model — an ended round NEVER rolls forward on its own:
+  //   live      — now < endTime: countdown + staking into `round`
+  //   revealing — ended with stakes, unresolved: the keeper reveals it ~8-12s
+  //               later while betting is already open in round+1
+  //   idle      — ended and empty (or already resolved): the next round waits
+  //               for its first stake, which starts a fresh 30s clock
+  const roundState =
+    round === 0 || roundEnd === 0 ? "init"
+    : smoothTime > 0 ? "live"
+    : (!resolved && (activePlayers > 0 || claimedCells.size > 0)) ? "revealing"
+    : "idle";
+  const isNextRoundView = roundState === "revealing" || roundState === "idle";
+  const displayRound = isNextRoundView ? round + 1 : round;
+  // While showing the not-yet-opened next round, present a clean slate — the
+  // polled state still holds the previous round until the roll lands on-chain
+  const viewPot = isNextRoundView ? "0" : potSize;
+  const viewPlayers = isNextRoundView ? 0 : activePlayers;
+  const viewCellCounts = isNextRoundView ? EMPTY_COUNTS : cellCounts;
+  const viewCellTotals = isNextRoundView ? EMPTY_TOTALS : cellTotals;
+  const viewMyStakes = isNextRoundView ? EMPTY_TOTALS : myStakes;
+  const viewClaimedCells = isNextRoundView ? EMPTY_SET : claimedCells;
+
   const actualDuration = (roundEnd > 0 && roundStart > 0) ? (roundEnd - roundStart) : ROUND_DURATION;
   const timerProgress = actualDuration > 0 ? smoothTime / actualDuration : 0;
-  const timerColor = smoothTime > 10 ? "#3E8BFF" : smoothTime > 5 ? "#6FB0FF" : "#FF6B5E";
+  const timerColor = roundState !== "live" ? "#3E8BFF" : smoothTime > 10 ? "#3E8BFF" : smoothTime > 5 ? "#6FB0FF" : "#FF6B5E";
 
   const getStatus = () => {
-    if (round === 0) return "INITIALIZING...";
-    if (resolved) return `ROUND ${round} RESOLVED`;
-    if (smoothTime <= 0) return `RESOLVING ROUND ${round}...`;
+    if (roundState === "init") return "INITIALIZING...";
+    if (roundState === "revealing") return `ROUND ${displayRound} — FIRST STAKE STARTS THE CLOCK`;
+    if (roundState === "idle") return `ROUND ${displayRound} — FIRST STAKE STARTS THE 30s CLOCK`;
     if (!ready || !authenticated) return `ROUND ${round} — LOGIN TO PLAY`;
     return `ROUND ${round} ACTIVE`;
   };
 
   const getCellState = (idx) => {
-    if (resolved && winningCell === idx) return "winner";
-    if (myStakes[idx] > 0n) return "yours";
-    if (claimedCells.has(idx)) return "claimed";
+    if (resolved && winningCell === idx) return "winner"; // keep the reveal glow until the next round opens
+    if (viewMyStakes[idx] > 0n) return "yours";
+    if (viewClaimedCells.has(idx)) return "claimed";
     return "empty";
   };
 
   const canClaim = (idx) => {
-    return !resolved && smoothTime > 0 && authenticated;
+    // Live rounds take stakes at their own id; ended rounds are open too —
+    // the next stake targets round+1 and starts the fresh clock
+    return authenticated && roundState !== "init";
   };
 
   // Parsed stake input (wei). Invalid/empty -> 0n.
@@ -835,37 +867,37 @@ export default function TheGrid() {
     if (idx == null || idx < 0) return null;
     const { feeBps } = feeConfig.current;
     const add = addWei ?? 0n;
-    const pool = BigInt(potSize || 0) + add;
+    const pool = BigInt(viewPot || 0) + add;
     if (pool === 0n) return 0n;
     // mirrors GriddyV4: the resolver tip is paid OUT OF the fee, so players
     // receive exactly (1 - feeBps) of the pot
     const fee = (pool * feeBps) / 10000n;
     const dist = pool - fee;
-    const mine = (myStakes[idx] || 0n) + add;
-    const cellT = (cellTotals[idx] || 0n) + add;
+    const mine = (viewMyStakes[idx] || 0n) + add;
+    const cellT = (viewCellTotals[idx] || 0n) + add;
     if (cellT === 0n || mine === 0n) return 0n;
     return (dist * mine) / cellT;
   };
 
   /** Multiple of your stake you'd get back if this cell wins (e.g. 2.4x) */
   const multipleFor = (idx, addWei = stakeWei) => {
-    const mine = (myStakes[idx] || 0n) + (addWei ?? 0n);
+    const mine = (viewMyStakes[idx] || 0n) + (addWei ?? 0n);
     if (mine === 0n) return null;
     const out = payoutFor(idx, addWei);
     if (out == null) return null;
     return Number((out * 1000n) / mine) / 1000;
   };
 
-  const myTotalStaked = myStakes.reduce((a, b) => a + b, 0n);
+  const myTotalStaked = viewMyStakes.reduce((a, b) => a + b, 0n);
 
   // ─── Display-only derivations (presentation) ───
   const tSecs = Math.max(0, Math.floor(smoothTime));
   const timerDisplay = `${String(Math.floor(tSecs / 60)).padStart(2, "0")}:${String(tSecs % 60).padStart(2, "0")}`;
-  const cellsPicked = myStakes.filter((v) => v > 0n).length;
+  const cellsPicked = viewMyStakes.filter((v) => v > 0n).length;
   // The winner is drawn stake-weighted (target = vrf % totalStaked), so your
   // chance is the share of the pot sitting on the cells you occupy.
-  const potWeiNow = BigInt(potSize || 0);
-  const myCellsTotal = cellTotals.reduce((a, t, i) => (myStakes[i] > 0n ? a + t : a), 0n);
+  const potWeiNow = BigInt(viewPot || 0);
+  const myCellsTotal = viewCellTotals.reduce((a, t, i) => (viewMyStakes[i] > 0n ? a + t : a), 0n);
   const winChancePct =
     cellsPicked > 0 && potWeiNow > 0n ? Number((myCellsTotal * 1000n) / potWeiNow) / 10 : null;
 
@@ -1308,23 +1340,38 @@ export default function TheGrid() {
         {/* ─── GAME COLUMN ─── */}
         <div style={S.gridArea} className="grid-game-area">
           {/* Round tag + pot hero */}
-          <div style={S.roundTag}>ROUND {round || "—"}</div>
+          <div style={S.roundTag}>ROUND {roundState === "init" ? "—" : displayRound}</div>
           <div style={S.potLabel} className="grid-pot-label">✦ TOTAL POT ✦</div>
           <div style={S.potHero} className="grid-pot-hero">
-            ${fmt(potSize)}<span style={S.potUnit} className="grid-pot-unit"> USDC</span>
+            ${fmt(viewPot)}<span style={S.potUnit} className="grid-pot-unit"> USDC</span>
           </div>
           {lastResult && (
             <div style={S.lastPill} className="grid-last-pill">
               ✦ R{lastResult.roundId} · {CELL_LABELS[lastResult.cell] || "?"} TOOK <span style={{ color: "#6FB0FF", fontWeight: 700 }}>${fmt(lastResult.pot)}</span>
             </div>
           )}
+          {/* V5 reveal chip: the previous round resolves in the background
+               while betting is already open here — flips to the winner */}
+          {roundState === "revealing" && (
+            <div style={S.revealChip} className="grid-reveal-chip">
+              <span style={S.revealDot} />REVEALING ROUND {round} ✦
+            </div>
+          )}
+          {roundState === "idle" && resolved && winningCell >= 0 && (
+            <div style={{ ...S.revealChip, ...S.revealChipWin }} className="grid-reveal-chip">
+              ✦ ROUND {round} WINNER — {CELL_LABELS[winningCell] || winningCell}
+            </div>
+          )}
 
           {/* Countdown */}
           <div style={S.timerPanel} className="grid-timer-panel">
             <div style={S.timerLabel}>
-              {round === 0 ? "INITIALIZING" : resolved ? "ROUND RESOLVED" : smoothTime <= 0 ? "RESOLVING" : "PICK A SQUARE"}
+              {roundState === "init" ? "INITIALIZING"
+                : roundState === "revealing" ? `ROUND ${displayRound} — FIRST STAKE STARTS THE CLOCK`
+                : roundState === "idle" ? "FIRST STAKE STARTS THE 30s CLOCK"
+                : "PICK A SQUARE"}
             </div>
-            <div style={{ ...S.timerBig, color: timerColor }} className="grid-timer-big">{timerDisplay}</div>
+            <div style={{ ...S.timerBig, color: timerColor }} className="grid-timer-big">{isNextRoundView ? "READY" : timerDisplay}</div>
             <div style={S.timerBarBg} className="grid-timer-bar">
               <div style={{
                 ...S.timerBarFill,
@@ -1345,33 +1392,13 @@ export default function TheGrid() {
               }} />
             )}
 
-            {/* ─── Resolution overlay: full blur only when nobody played;
-                 with picks on the board, the roulette sweep IS the show ─── */}
-            {smoothTime <= 0 && round > 0 && !resolved && claimedCells.size === 0 && (
-              <div style={{
-                position: "absolute", inset: 0, borderRadius: 22, zIndex: 20,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                backdropFilter: "blur(2px)", WebkitBackdropFilter: "blur(2px)",
-                background: "rgba(6,11,28,0.75)",
-                animation: "fadeIn 0.15s ease-out",
-              }}>
-                <div style={{ position: "relative", width: 56, height: 56 }}>
-                  <div style={{ position: "absolute", inset: 0, borderRadius: "50%", border: "2px solid transparent", borderTopColor: "#1F5FD6", borderRightColor: "#1F5FD6", animation: "spin 0.9s linear infinite" }} />
-                  <div style={{ position: "absolute", inset: 7, borderRadius: "50%", border: "2px solid transparent", borderBottomColor: "#3E8BFF", borderLeftColor: "#3E8BFF", animation: "spinR 0.65s linear infinite" }} />
-                  <div style={{ position: "absolute", inset: 14, borderRadius: "50%", border: "2px solid transparent", borderTopColor: "#6FB0FF", animation: "spin 1.3s linear infinite" }} />
-                  <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, color: "#3E8BFF", animation: "pulse 1.2s ease-in-out infinite" }}>◎</div>
-                </div>
-              </div>
-            )}
-
             <div style={S.grid} className="grid-cells">
               {CELL_LABELS.map((label, idx) => {
                 const state = getCellState(idx);
                 const isSelected = selectedCell === idx;
                 const isWinnerCell = resolved && winningCell === idx;
                 const isMiss = resolved && winningCell >= 0 && !isWinnerCell && (state === "claimed" || state === "yours");
-                const isSwept = scanCell === idx && !resolved;
-                const count = cellCounts[idx] || 0;
+                const count = viewCellCounts[idx] || 0;
                 return (
                   <button
                     key={idx}
@@ -1383,7 +1410,6 @@ export default function TheGrid() {
                       ...(isSelected ? S.cellSelected : {}),
                       ...(state === "winner" ? S.cellWinner : {}),
                       ...(isMiss ? S.cellMiss : {}),
-                      ...(isSwept ? S.cellScanSweep : {}),
                       transition: "all 0.12s ease",
                       animationDelay: isWinnerCell ? "0s" : `${Math.floor(idx / GRID_SIZE) * 0.05}s`,
                     }}
@@ -1416,11 +1442,11 @@ export default function TheGrid() {
                         <span style={{ fontSize: 18, fontWeight: 700, color: "#43537A" }}>✕</span>
                       ) : state === "yours" ? (
                         <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                          <span style={S.cellYouTag}>${fmt(myStakes[idx])}</span>
-                          <span style={{ fontSize: 8, color: "#0A1E4A", fontWeight: 700 }}>of ${fmt(cellTotals[idx])}</span>
+                          <span style={S.cellYouTag}>${fmt(viewMyStakes[idx])}</span>
+                          <span style={{ fontSize: 8, color: "#0A1E4A", fontWeight: 700 }}>of ${fmt(viewCellTotals[idx])}</span>
                         </span>
                       ) : count > 0 ? (
-                        <span style={{ fontFamily: "'Baloo 2', sans-serif", fontSize: 13, fontWeight: 700, color: isSwept ? "#071230" : "#D7E3FF" }}>${fmt(cellTotals[idx])}</span>
+                        <span style={{ fontFamily: "'Baloo 2', sans-serif", fontSize: 13, fontWeight: 700, color: "#D7E3FF" }}>${fmt(viewCellTotals[idx])}</span>
                       ) : (
                         <span style={{
                           ...S.cellDot,
@@ -1448,7 +1474,7 @@ export default function TheGrid() {
               <span style={S.statLabel}>⚡ WIN CHANCE</span>
             </div>
             <div style={{ ...S.statCell, borderLeft: "1px solid rgba(148,178,255,0.08)", borderRight: "1px solid rgba(148,178,255,0.08)" }}>
-              <span style={S.statValueTop}>{activePlayers}</span>
+              <span style={S.statValueTop}>{viewPlayers}</span>
               <span style={S.statLabel}>PLAYERS IN</span>
             </div>
             <div style={S.statCell}>
@@ -1463,8 +1489,8 @@ export default function TheGrid() {
               const focus = selectedCell != null ? selectedCell : (hoveredCell >= 0 ? hoveredCell : null);
               const pay = focus != null ? payoutFor(focus) : null;
               const mult = focus != null ? multipleFor(focus) : null;
-              const nOn = focus != null ? (cellCounts[focus] || 0) : 0;
-              const cellPot = focus != null ? (cellTotals[focus] || 0n) : 0n;
+              const nOn = focus != null ? (viewCellCounts[focus] || 0) : 0;
+              const cellPot = focus != null ? (viewCellTotals[focus] || 0n) : 0n;
               const belowMin = stakeWei < minStake;
               return (
                 <>
@@ -1526,8 +1552,8 @@ export default function TheGrid() {
                     <button style={S.betCta} onClick={login}>LOGIN TO PLAY ◎</button>
                   ) : claiming ? (
                     <div style={S.claimingBar}><div style={S.claimingDot} />CONFIRMING TX...</div>
-                  ) : smoothTime <= 0 ? (
-                    <div style={S.betLocked}>RESOLVING…</div>
+                  ) : roundState === "init" ? (
+                    <div style={S.betLocked}>INITIALIZING…</div>
                   ) : selectedCell != null ? (
                     <button
                       style={{ ...S.betCta, opacity: belowMin ? 0.4 : 1, cursor: belowMin ? "default" : "pointer" }}
@@ -1910,6 +1936,21 @@ const S = {
     background: "rgba(148,178,255,0.06)", border: "1px solid rgba(148,178,255,0.12)",
     borderRadius: 999, padding: "5px 12px", marginTop: 8,
   },
+  revealChip: {
+    display: "inline-flex", alignItems: "center", gap: 6,
+    fontSize: 9.5, letterSpacing: 1.5, fontWeight: 700,
+    fontFamily: "'JetBrains Mono', monospace", color: "#6FB0FF",
+    background: "rgba(62,139,255,0.10)", border: "1px solid rgba(62,139,255,0.35)",
+    borderRadius: 999, padding: "5px 12px", marginTop: 8,
+    animation: "pulse 1.4s ease-in-out infinite",
+  },
+  revealChipWin: {
+    color: "#EAF1FF",
+    background: "rgba(62,139,255,0.18)", border: "1px solid rgba(62,139,255,0.55)",
+    boxShadow: "0 0 14px rgba(62,139,255,0.35)",
+    animation: "winnerBannerIn 0.5s ease-out",
+  },
+  revealDot: { width: 6, height: 6, borderRadius: "50%", background: "#3E8BFF", flexShrink: 0, animation: "pulse 1s ease-in-out infinite" },
   timerPanel: {
     width: "100%", marginTop: 14,
     background: "#0A1228", border: "1px solid rgba(148,178,255,0.08)",

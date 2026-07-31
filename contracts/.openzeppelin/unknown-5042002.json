@@ -5,6 +5,11 @@
       "address": "0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c",
       "txHash": "0xad0be25fa0573d1435aa99f7bb4ff71c83100acf74c69eee59102f5b5fdd0c3b",
       "kind": "uups"
+    },
+    {
+      "address": "0x93C3B6362D82a9f6495517F0E6Ffa63594596453",
+      "txHash": "0x6a1ff5cf0ccfc48aca5fa53b37556676f3365043d70eb48ee28244b3537940af",
+      "kind": "uups"
     }
   ],
   "impls": {
@@ -465,6 +470,649 @@
               "slot": "0"
             }
           ],
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    },
+    "0d19a4b116934fb05bf81b5c358f860de1d8ccabbd0bdd805dca331cc7aed66c": {
+      "address": "0x6B1E33F80ec6c3Fb79E21851441B680f7a0726b3",
+      "txHash": "0x8f58a56c9daed488f8caf9f5badb0f7da873ef50dc8bd645f76a1227921e57e5",
+      "layout": {
+        "solcVersion": "0.8.28",
+        "storage": [
+          {
+            "label": "griddyToken_retired",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_address",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:68",
+            "renamedFrom": "griddyToken"
+          },
+          {
+            "label": "beacon",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_contract(DrandBeacon)8821",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:69"
+          },
+          {
+            "label": "feeRecipient",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_address",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:70"
+          },
+          {
+            "label": "minStakeWei",
+            "offset": 0,
+            "slot": "3",
+            "type": "t_uint256",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:71"
+          },
+          {
+            "label": "roundDuration",
+            "offset": 0,
+            "slot": "4",
+            "type": "t_uint256",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:72"
+          },
+          {
+            "label": "beaconGap",
+            "offset": 0,
+            "slot": "5",
+            "type": "t_uint256",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:73"
+          },
+          {
+            "label": "protocolFeeBps",
+            "offset": 0,
+            "slot": "6",
+            "type": "t_uint256",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:74"
+          },
+          {
+            "label": "resolverTipWei",
+            "offset": 0,
+            "slot": "7",
+            "type": "t_uint256",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:75"
+          },
+          {
+            "label": "griddyPerRound_retired",
+            "offset": 0,
+            "slot": "8",
+            "type": "t_uint256",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:78",
+            "renamedFrom": "griddyPerRound"
+          },
+          {
+            "label": "motherlodePerRound_retired",
+            "offset": 0,
+            "slot": "9",
+            "type": "t_uint256",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:80",
+            "renamedFrom": "motherlodePerRound"
+          },
+          {
+            "label": "bonusRoundOdds_retired",
+            "offset": 0,
+            "slot": "10",
+            "type": "t_uint256",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:82",
+            "renamedFrom": "bonusRoundOdds"
+          },
+          {
+            "label": "bonusMultiplier_retired",
+            "offset": 0,
+            "slot": "11",
+            "type": "t_uint256",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:84",
+            "renamedFrom": "bonusMultiplier"
+          },
+          {
+            "label": "bonusReserveBps_retired",
+            "offset": 0,
+            "slot": "12",
+            "type": "t_uint256",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:86",
+            "renamedFrom": "bonusReserveBps"
+          },
+          {
+            "label": "currentRoundId",
+            "offset": 0,
+            "slot": "13",
+            "type": "t_uint256",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:87"
+          },
+          {
+            "label": "accumulatedFees",
+            "offset": 0,
+            "slot": "14",
+            "type": "t_uint256",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:88"
+          },
+          {
+            "label": "pendingRefunds",
+            "offset": 0,
+            "slot": "15",
+            "type": "t_uint256",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:89"
+          },
+          {
+            "label": "pendingWithdrawals",
+            "offset": 0,
+            "slot": "16",
+            "type": "t_uint256",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:90"
+          },
+          {
+            "label": "bonusReserve_retired",
+            "offset": 0,
+            "slot": "17",
+            "type": "t_uint256",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:92",
+            "renamedFrom": "bonusReserve"
+          },
+          {
+            "label": "paused",
+            "offset": 0,
+            "slot": "18",
+            "type": "t_bool",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:95"
+          },
+          {
+            "label": "rounds",
+            "offset": 0,
+            "slot": "19",
+            "type": "t_mapping(t_uint256,t_struct(Round)5489_storage)",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:109"
+          },
+          {
+            "label": "cellTotal",
+            "offset": 0,
+            "slot": "20",
+            "type": "t_mapping(t_uint256,t_mapping(t_uint8,t_uint256))",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:110"
+          },
+          {
+            "label": "cellStakers",
+            "offset": 0,
+            "slot": "21",
+            "type": "t_mapping(t_uint256,t_mapping(t_uint8,t_array(t_address)dyn_storage))",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:111"
+          },
+          {
+            "label": "stakeOf",
+            "offset": 0,
+            "slot": "22",
+            "type": "t_mapping(t_uint256,t_mapping(t_uint8,t_mapping(t_address,t_uint256)))",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:112"
+          },
+          {
+            "label": "playerTotalStaked",
+            "offset": 0,
+            "slot": "23",
+            "type": "t_mapping(t_uint256,t_mapping(t_address,t_uint256))",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:113"
+          },
+          {
+            "label": "roundVoided",
+            "offset": 0,
+            "slot": "24",
+            "type": "t_mapping(t_uint256,t_bool)",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:114"
+          },
+          {
+            "label": "refunded",
+            "offset": 0,
+            "slot": "25",
+            "type": "t_mapping(t_uint256,t_mapping(t_address,t_bool))",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:115"
+          },
+          {
+            "label": "voidRequestedAt",
+            "offset": 0,
+            "slot": "26",
+            "type": "t_mapping(t_uint256,t_uint64)",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:116"
+          },
+          {
+            "label": "unclaimedWinnings",
+            "offset": 0,
+            "slot": "27",
+            "type": "t_mapping(t_address,t_uint256)",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:117"
+          },
+          {
+            "label": "__gap",
+            "offset": 0,
+            "slot": "28",
+            "type": "t_array(t_uint256)50_storage",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:118"
+          },
+          {
+            "label": "totalUnresolvedStakes",
+            "offset": 0,
+            "slot": "78",
+            "type": "t_uint256",
+            "contract": "GriddyV5",
+            "src": "src/GriddyV5.sol:123"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_struct(InitializableStorage)279_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(Ownable2StepStorage)13_storage": {
+            "label": "struct Ownable2StepUpgradeable.Ownable2StepStorage",
+            "members": [
+              {
+                "label": "_pendingOwner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)68_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_address)dyn_storage": {
+            "label": "address[]",
+            "numberOfBytes": "32"
+          },
+          "t_array(t_uint256)50_storage": {
+            "label": "uint256[50]",
+            "numberOfBytes": "1600"
+          },
+          "t_contract(DrandBeacon)8821": {
+            "label": "contract DrandBeacon",
+            "numberOfBytes": "20"
+          },
+          "t_mapping(t_address,t_bool)": {
+            "label": "mapping(address => bool)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_uint256)": {
+            "label": "mapping(address => uint256)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_bool)": {
+            "label": "mapping(uint256 => bool)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_mapping(t_address,t_bool))": {
+            "label": "mapping(uint256 => mapping(address => bool))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_mapping(t_address,t_uint256))": {
+            "label": "mapping(uint256 => mapping(address => uint256))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_mapping(t_uint8,t_array(t_address)dyn_storage))": {
+            "label": "mapping(uint256 => mapping(uint8 => address[]))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_mapping(t_uint8,t_mapping(t_address,t_uint256)))": {
+            "label": "mapping(uint256 => mapping(uint8 => mapping(address => uint256)))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_mapping(t_uint8,t_uint256))": {
+            "label": "mapping(uint256 => mapping(uint8 => uint256))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_struct(Round)5489_storage)": {
+            "label": "mapping(uint256 => struct GriddyV5.Round)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint256,t_uint64)": {
+            "label": "mapping(uint256 => uint64)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint8,t_array(t_address)dyn_storage)": {
+            "label": "mapping(uint8 => address[])",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint8,t_mapping(t_address,t_uint256))": {
+            "label": "mapping(uint8 => mapping(address => uint256))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint8,t_uint256)": {
+            "label": "mapping(uint8 => uint256)",
+            "numberOfBytes": "32"
+          },
+          "t_struct(Round)5489_storage": {
+            "label": "struct GriddyV5.Round",
+            "members": [
+              {
+                "label": "startTime",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "endTime",
+                "type": "t_uint64",
+                "offset": 8,
+                "slot": "0"
+              },
+              {
+                "label": "drandRound",
+                "type": "t_uint64",
+                "offset": 16,
+                "slot": "0"
+              },
+              {
+                "label": "winningCell",
+                "type": "t_uint8",
+                "offset": 24,
+                "slot": "0"
+              },
+              {
+                "label": "resolved",
+                "type": "t_bool",
+                "offset": 25,
+                "slot": "0"
+              },
+              {
+                "label": "isBonusRound",
+                "type": "t_bool",
+                "offset": 26,
+                "slot": "0"
+              },
+              {
+                "label": "totalStaked",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "1"
+              },
+              {
+                "label": "totalStakers",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "2"
+              },
+              {
+                "label": "winnerTotal",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "3"
+              },
+              {
+                "label": "distributable",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "4"
+              },
+              {
+                "label": "griddyBase",
+                "type": "t_uint256",
+                "offset": 0,
+                "slot": "5"
+              }
+            ],
+            "numberOfBytes": "192"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint8": {
+            "label": "uint8",
+            "numberOfBytes": "1"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.Ownable2Step": [
+            {
+              "contract": "Ownable2StepUpgradeable",
+              "label": "_pendingOwner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol:29",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Ownable": [
+            {
+              "contract": "OwnableUpgradeable",
+              "label": "_owner",
+              "type": "t_address",
+              "src": "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol:24",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
+    },
+    "0215fd54404e6d8ea30b29accd49783dd1b3553c49b89269eac59456af77851e": {
+      "address": "0x12fBbDE353Ef273663Bc09DC3734eC2DFa3C197b",
+      "txHash": "0x2e1c0b531243f3189d3cb83ce4bc26785b7dc2a4b1549d66d04dcd1dd1de5100",
+      "layout": {
+        "solcVersion": "0.8.28",
+        "storage": [
+          {
+            "label": "publicKey0",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_uint256",
+            "contract": "DrandBeaconV2",
+            "src": "src/drand/DrandBeaconV2.sol:27"
+          },
+          {
+            "label": "publicKey1",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_uint256",
+            "contract": "DrandBeaconV2",
+            "src": "src/drand/DrandBeaconV2.sol:28"
+          },
+          {
+            "label": "publicKey2",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_uint256",
+            "contract": "DrandBeaconV2",
+            "src": "src/drand/DrandBeaconV2.sol:29"
+          },
+          {
+            "label": "publicKey3",
+            "offset": 0,
+            "slot": "3",
+            "type": "t_uint256",
+            "contract": "DrandBeaconV2",
+            "src": "src/drand/DrandBeaconV2.sol:30"
+          },
+          {
+            "label": "genesisTimestamp",
+            "offset": 0,
+            "slot": "4",
+            "type": "t_uint256",
+            "contract": "DrandBeaconV2",
+            "src": "src/drand/DrandBeaconV2.sol:33"
+          },
+          {
+            "label": "period",
+            "offset": 0,
+            "slot": "5",
+            "type": "t_uint256",
+            "contract": "DrandBeaconV2",
+            "src": "src/drand/DrandBeaconV2.sol:35"
+          },
+          {
+            "label": "__gap",
+            "offset": 0,
+            "slot": "6",
+            "type": "t_array(t_uint256)44_storage",
+            "contract": "DrandBeaconV2",
+            "src": "src/drand/DrandBeaconV2.sol:36"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_struct(InitializableStorage)279_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(OwnableStorage)68_storage": {
+            "label": "struct OwnableUpgradeable.OwnableStorage",
+            "members": [
+              {
+                "label": "_owner",
+                "type": "t_address",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_array(t_uint256)44_storage": {
+            "label": "uint256[44]",
+            "numberOfBytes": "1408"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          }
+        },
+        "namespaces": {
           "erc7201:openzeppelin.storage.Ownable": [
             {
               "contract": "OwnableUpgradeable",

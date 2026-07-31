@@ -16,16 +16,14 @@ async function main() {
   const [p1] = await ethers.getSigners();
   const griddy = await ethers.getContractAt("GriddyV4", dep.griddy);
 
-  // Get a stakeable round (skip a stale empty one ourselves if needed)
+  // V5 continuous rounds: an expired betting round never rolls by itself —
+  // the first stake with the PREDICTED id (current+1) opens a fresh window.
   let roundId = await griddy.currentRoundId();
   for (;;) {
     const r = await griddy.rounds(roundId);
     const now = Math.floor(Date.now() / 1000);
-    if (!r.resolved && Number(r.endTime) - now > 12) break;
-    if (!r.resolved && r.totalStakers === 0n && now > Number(r.endTime) + 8) {
-      console.log(`skipping stale empty round ${roundId}...`);
-      await (await griddy.skipEmptyRound(roundId)).wait();
-    }
+    if (now >= Number(r.endTime) || r.resolved) { roundId = roundId + 1n; break; }
+    if (Number(r.endTime) - now > 12) break;
     await new Promise((res) => setTimeout(res, 2000));
     roundId = await griddy.currentRoundId();
   }

@@ -6,7 +6,7 @@
   "feeRecipient": "0x52c59BC217fD0C0b2157f1B2Da1a12635E19Da4c",
   "drandBeacon": "0x73d7D306F5AE49a60c70C8Cf0331F1DA65E6cD2A",
   "griddy": "0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c",
-  "griddyImpl": "0xC5c53BB4A93bCe76b99c726FFA1173Be31f14d8d",
+  "griddyImpl": "0x6b1e33f80ec6c3fb79e21851441b680f7a0726b3",
   "params": {
     "minStakeWei": "100000000000000",
     "resolverTipWei": "30000000000000",
@@ -19,5 +19,9 @@
     "chainHash": "04f1e9062b8a81f848fded9c12306733282b2727ecced50032187751166ec8c3",
     "genesis": 1727521075,
     "period": 3
-  }
+  },
+  "version": "V5",
+  "upgradedAt": "2026-07-31T23:05:57.911Z",
+  "drandBeaconV2": "0x93C3B6362D82a9f6495517F0E6Ffa63594596453",
+  "drandBeaconV2Impl": "0x12fBbDE353Ef273663Bc09DC3734eC2DFa3C197b"
 }
