@@ -1,10 +1,10 @@
 # Griddy
 
-**A provably fair grid game on Arc Testnet.**
+**A provably fair grid game on Arc.**
 Stake USDC on a 5×5 grid. A distributed randomness beacon picks the winning
 cell. Winners split the pot in proportion to what they staked.
 
-**[▶ Play](https://griddy-two.vercel.app)** · [Contract](https://testnet.arcscan.app/address/0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c) · [drand](https://drand.love)
+**[▶ Play](https://griddy-two.vercel.app)** · [drand](https://drand.love)
 
 Griddy runs on Arc — Circle's chain, where the **native gas token is USDC** —
 so the game stakes it directly via `msg.value`, with no token approvals. (Arc
@@ -32,12 +32,12 @@ Two rules define the whole game:
 
 Together these mean every wei has the same expected value wherever you put
 it — there is no cell that is secretly a better bet, and no way to seed dust
-across the board to shade someone else's odds. The house takes 5%, and the
+across the board to shade someone else's odds. The house takes 10%, and the
 tip that pays whoever submits the randomness comes out of that fee — never
 out of the prize.
 
 ```
-prize    = pot − 5% fee          (the resolver tip is paid from the fee)
+prize    = pot − 10% fee         (the resolver tip is paid from the fee)
 your cut = prize × (your stake on the winning cell ÷ that cell's total)
 ```
 
@@ -51,8 +51,8 @@ every 3 seconds by the League of Entropy, a distributed group of independent
 operators. No single participant can predict or withhold a beacon.
 
 The important part is the timing. When a round opens, the contract writes down
-the *number* of a beacon that **does not exist yet** and will only be
-published only seconds after betting closes. So while you're placing
+the *number* of a beacon that **does not exist yet** and is published only
+a few seconds after betting closes. So while you're placing
 stakes, the answer is not merely secret — it hasn't been created.
 
 When that beacon appears, **anyone** can submit it. The contract verifies its
@@ -80,13 +80,13 @@ Also on **Arc Testnet** (chainId 5042002 · explorer
 `0x93C3B6362D82a9f6495517F0E6Ffa63594596453`.
 
 Every contract deploys behind an upgradeable proxy. Full record in
-`contracts/deployments/griddy-arc-testnet.json`. Arc's precompiles were
+`contracts/deployments/griddy-arc-mainnet.json`. Arc's precompiles were
 probe-verified against a real drand beacon before deploy
 (`contracts/scripts/probe-arc-precompiles.ts`); complete rounds — uneven
-stakes, on-chain BLS verification, exact 95% pro-rata auto-payout — are
+stakes, on-chain BLS verification, exact 90% pro-rata auto-payout — are
 played end-to-end with `contracts/scripts/smoke-arc.ts`, and
 `contracts/scripts/verify-payouts.ts` audits live rounds from chain data
-alone (pot == sum of stake events, prize == 95% exactly, pro-rata payouts,
+alone (pot == sum of stake events, prize == 90% exactly, pro-rata payouts,
 contract balance covers every liability to the wei).
 
 ## Parameters
@@ -98,7 +98,7 @@ contract balance covers every liability to the wei).
 | Reveal latency | ~4 s measured | round end → resolved on-chain (`scripts/measure-resolution.ts`) |
 | Minimum stake | $0.0001 | per *new* position; top-ups can be any size |
 | Maximum stake | none | capital buys share, not better odds |
-| Protocol fee | 5% | capped at 20% |
+| Protocol fee | 10% | capped at 20% |
 | Resolver tip | $0.00003 | paid from the fee; capped at $0.001 |
 | Stakers per cell | 100 | bounds the auto-pay loop; top-ups are free |
 
@@ -149,11 +149,11 @@ prove the cryptography, not a mock:
 cd contracts && npm install && npx hardhat test
 ```
 
-**Deploy** (Arc testnet; runs post-deploy assertions and fails loudly rather
-than leave a half-wired game):
+**Deploy** (runs post-deploy assertions and fails loudly rather than leave a
+half-wired game). `arc-mainnet` is chainId 5042; use `arc-testnet` for 5042002:
 
 ```bash
-PRIVATE_KEY=0x… npx hardhat run scripts/deploy-griddy-arc.ts --network arc-testnet
+PRIVATE_KEY=0x… npx hardhat run scripts/deploy-griddy-arc.ts --network arc-mainnet
 ```
 
 **Keeper** — resolves rounds and serves the live event feed. It holds no
@@ -162,8 +162,8 @@ tip makes it self-funding.
 
 ```bash
 cd services/keeper && npm install
-PRIVATE_KEY=0x… GRIDDY_ADDRESS=0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c CHAIN_ID=5042002 \
-  RPC_URL=https://rpc.testnet.arc.network npm start
+PRIVATE_KEY=0x… GRIDDY_ADDRESS=0xfa29a5a324149a60086B3aeD20cBF42Bd761d5A1 CHAIN_ID=5042 \
+  RPC_URL=https://arc-mainnet.g.alchemy.com/v2/<your-key> npm start
 ```
 
 **Frontend**:

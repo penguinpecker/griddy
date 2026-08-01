@@ -189,7 +189,7 @@ export default function TheGrid() {
   const [walletView, setWalletView] = useState("menu"); // "menu" | "withdraw"
   const walletDropdownRef = useRef(null);
   const [lastResult, setLastResult] = useState(null); // { roundId, cell, players, pot, txHash }
-  const feeConfig = useRef({ feeBps: 500n, resolverTipWei: 30000000000000n, minStakeWei: MIN_STAKE_DEFAULT }); // defaults, updated from chain
+  const feeConfig = useRef({ feeBps: 1000n, resolverTipWei: 30000000000000n, minStakeWei: MIN_STAKE_DEFAULT }); // defaults, updated from chain
   const [roundHistory, setRoundHistory] = useState([]); // array of ALL loaded past results, newest first
   const [moneyFlow, setMoneyFlow] = useState(false);
   const [gridFlash, setGridFlash] = useState(false);
@@ -241,7 +241,7 @@ export default function TheGrid() {
   // ─── Read fee config once on mount ───
   useEffect(() => {
     Promise.all([
-      publicClient.readContract({ address: GRID_ADDR, abi: GRID_ABI, functionName: "protocolFeeBps" }).catch(() => 500n),
+      publicClient.readContract({ address: GRID_ADDR, abi: GRID_ABI, functionName: "protocolFeeBps" }).catch(() => 1000n),
       publicClient.readContract({ address: GRID_ADDR, abi: GRID_ABI, functionName: "resolverTipWei" }).catch(() => 30000000000000n),
       publicClient.readContract({ address: GRID_ADDR, abi: GRID_ABI, functionName: "minStakeWei" }).catch(() => MIN_STAKE_DEFAULT),
     ]).then(([bps, tip, minS]) => {

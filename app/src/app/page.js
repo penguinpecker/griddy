@@ -203,7 +203,7 @@ export default function HomePage() {
               ))}
             </div>
             <button onClick={()=>router.push("/play")} className="cta-pill" style={{...CTA, position:"relative"}}>PICK A SQUARE ◎</button>
-            <div style={{fontFamily:MONO, fontSize:9, letterSpacing:2, color:FAINT, textAlign:"center", position:"relative"}}>SIMULATION · ARC TESTNET · DRAND SECURED</div>
+            <div style={{fontFamily:MONO, fontSize:9, letterSpacing:2, color:FAINT, textAlign:"center", position:"relative"}}>SIMULATION · ARC · DRAND SECURED</div>
           </div>
 
           {/* Features + code redeem */}
@@ -296,9 +296,9 @@ export default function HomePage() {
               </div>
               <div style={{display:"flex", flexDirection:"column", gap:6, minWidth:150, textAlign:"center", flex:1}}>
                 <div style={{fontFamily:MONO, fontSize:12, fontWeight:700, letterSpacing:3, color:TXT}}>YOU WON!</div>
-                <div style={{fontFamily:BALOO, fontSize:34, fontWeight:800, color:ACCENT, lineHeight:1.1, textShadow:"0 0 24px rgba(62,139,255,0.4)"}}>$3.80</div>
+                <div style={{fontFamily:BALOO, fontSize:34, fontWeight:800, color:ACCENT, lineHeight:1.1, textShadow:"0 0 24px rgba(62,139,255,0.4)"}}>$3.60</div>
                 <div style={{fontSize:11.5, color:MUTED, lineHeight:1.6}}>Congrats — you hit the square. Winners are auto-paid on resolve.</div>
-                <div style={{fontFamily:MONO, fontSize:8.5, letterSpacing:1.5, color:FAINT}}>PRIZE = 95% OF POT</div>
+                <div style={{fontFamily:MONO, fontSize:8.5, letterSpacing:1.5, color:FAINT}}>PRIZE = 90% OF POT</div>
               </div>
             </div>
           </div>
@@ -340,11 +340,11 @@ export default function HomePage() {
         </div>
         <div className="two-col-grid">
           <MechCard title="PAYOUT MATH">
-            <p style={{fontSize:12, color:MUTED, lineHeight:1.75, margin:0}}>Every stake goes into the pot. A 5% protocol fee is deducted — that is the only cut — and the remaining 95% goes to stakers on the winning cell, split pro-rata to how much each staked. The resolver tip is paid out of the fee, never on top of it.</p>
+            <p style={{fontSize:12, color:MUTED, lineHeight:1.75, margin:0}}>Every stake goes into the pot. A 10% protocol fee is deducted — that is the only cut — and the remaining 90% goes to stakers on the winning cell, split pro-rata to how much each staked. The resolver tip is paid out of the fee, never on top of it.</p>
             <div style={{background:"rgba(6,11,28,0.7)", border:"1px solid rgba(148,178,255,0.1)", borderRadius:12, padding:"12px 14px", fontFamily:MONO, fontSize:11, color:FAINT, lineHeight:1.9}}>
               pool = <b style={{color:ACCENT_LIGHT}}>sum of all stakes</b><br/>
-              fee = pool × <b style={{color:ACCENT_LIGHT}}>5%</b><br/>
-              prize = pool − fee  <b style={{color:ACCENT_LIGHT}}>(= 95% of pot)</b><br/>
+              fee = pool × <b style={{color:ACCENT_LIGHT}}>10%</b><br/>
+              prize = pool − fee  <b style={{color:ACCENT_LIGHT}}>(= 90% of pot)</b><br/>
               your cut = prize × <b style={{color:ACCENT_LIGHT}}>your stake ÷ cell total</b>
             </div>
           </MechCard>
@@ -352,9 +352,9 @@ export default function HomePage() {
             <p style={{fontSize:12, color:MUTED, lineHeight:1.75, margin:0}}>A cell wins with probability equal to its share of the pot, and the prize splits by stake — so every dollar has the same expected value. Bet big for a bigger share, or spread across cells.</p>
             <div style={{background:"rgba(6,11,28,0.7)", border:"1px solid rgba(148,178,255,0.1)", borderRadius:12, padding:"12px 14px", fontFamily:MONO, fontSize:11, color:FAINT, lineHeight:1.9}}>
               <span style={{color:FAINT}}>{`// pot $1.00; winning cell holds $0.40`}</span><br/>
-              prize ≈ <b style={{color:ACCENT_LIGHT}}>$0.95</b><br/>
+              prize ≈ <b style={{color:ACCENT_LIGHT}}>$0.90</b><br/>
               you staked <b style={{color:ACCENT_LIGHT}}>$0.10</b> of that $0.40<br/>
-              you get = <b style={{color:ACCENT_LIGHT}}>$0.2375</b> (25% of cell)
+              you get = <b style={{color:ACCENT_LIGHT}}>$0.225</b> (25% of cell)
             </div>
           </MechCard>
         </div>

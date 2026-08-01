@@ -7,7 +7,7 @@ import { defineChain } from "viem";
 export const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID || 5042);
 
 export const RPC_URL =
-  process.env.NEXT_PUBLIC_RPC_URL || "https://5042.rpc.thirdweb.com";
+  process.env.NEXT_PUBLIC_RPC_URL || "https://arc-mainnet.g.alchemy.com/v2/alch-demo";
 
 // Arc mainnet has no public block explorer yet (the network is still in its
 // private pre-launch phase). Empty = the UI renders tx hashes as plain text.
