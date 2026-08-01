@@ -125,7 +125,7 @@ export default function HomePage() {
     { t:"VERIFIED FAIR", d:"Provably fair. Always on-chain.", icon:(
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="1.7" strokeLinejoin="round" strokeLinecap="round"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6l7-3z"/><path d="M9 11.5l2 2 4-4"/></svg>
     )},
-    { t:"BUILT FOR CRYPTO", d:"Stake USDC. Win onchain.", icon:(
+    { t:"BUILT FOR CRYPTO", d:"Play USDC. Win onchain.", icon:(
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="1.7" strokeLinejoin="round" strokeLinecap="round"><path d="M12 2c3 2 4.5 5.5 4.5 9L12 15.5 7.5 11c0-3.5 1.5-7 4.5-9z"/><circle cx="12" cy="8.5" r="1.6"/><path d="M8 13l-2.5 5.5L10 16M16 13l2.5 5.5L14 16"/></svg>
     )},
   ];
@@ -164,7 +164,7 @@ export default function HomePage() {
             Pick a cell on the 5×5 grid. A drand randomness beacon — verified on-chain — selects the winner from occupied cells only. Winners share the pot — or keep everything if they picked alone.
           </div>
           <div style={{display:"flex", gap:8, flexWrap:"wrap", justifyContent:"center"}}>
-            {["STAKE ANY AMOUNT OF USDC","30S ROUNDS","DRAND BEACON EVERY ROUND","AUTO-PAY ON RESOLVE"].map(c=>(
+            {["PLAY ANY AMOUNT OF USDC","30S ROUNDS","DRAND BEACON EVERY ROUND","AUTO-PAY ON RESOLVE"].map(c=>(
               <div key={c} style={{fontFamily:MONO, fontSize:9, letterSpacing:1.5, padding:"5px 12px", borderRadius:999, background:"rgba(148,178,255,0.06)", border:"1px solid rgba(148,178,255,0.12)", color:MUTED}}>{c}</div>
             ))}
           </div>
@@ -316,9 +316,9 @@ export default function HomePage() {
         <div className="steps-grid">
           {[
             {n:"01",icon:"🔐",t:"LOGIN",d:"Sign in with email, Google, or wallet. Privy creates an embedded wallet instantly — no seed phrase needed."},
-            {n:"02",icon:"⬡",t:"PICK A CELL",d:"Stake any amount of USDC (min $0.0001) on any cells. Multiple players can stake the same cell — the prize splits pro-rata to stake."},
+            {n:"02",icon:"⬡",t:"PICK A CELL",d:"Play any amount of USDC (min $0.10) on any squares. Multiple players can pick the same square — the prize splits pro-rata to what each put in."},
             {n:"03",icon:"🎲",t:"DRAND BEACON",d:"When the 30s round ends, the drand beacon pinned at round start is emitted. Its BLS signature is verified on-chain and picks the winner from occupied cells only."},
-            {n:"04",icon:"💰",t:"GET PAID",d:"Winners are paid automatically during resolution. No claim step — USDC goes straight to your wallet, pro-rata to your stake on the winning cell."},
+            {n:"04",icon:"💰",t:"GET PAID",d:"Winners are paid automatically during resolution. No claim step — USDC goes straight to your wallet, pro-rata to what you put on the winning square."},
           ].map(({n,icon,t,d})=>(
             <div key={n} style={{...CARD, borderRadius:18, padding:22, display:"flex", flexDirection:"column", gap:10}}>
               <span style={{fontFamily:MONO, fontSize:9, fontWeight:700, color:ACCENT_LIGHT, background:"rgba(62,139,255,0.1)", border:"1px solid rgba(62,139,255,0.18)", borderRadius:999, padding:"3px 9px", display:"inline-block", letterSpacing:1.5, alignSelf:"flex-start"}}>{n}</span>

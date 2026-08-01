@@ -28,10 +28,11 @@ async function main() {
     roundId = await griddy.currentRoundId();
   }
 
-  const stake = ethers.parseEther("0.01");
+  // Read the live minimum rather than hardcoding — the owner can raise it
+  const stake = await griddy.minStakeWei();
   await (await griddy.stake(roundId, [4], [stake], { value: stake })).wait();
   const r = await griddy.rounds(roundId);
-  console.log(`staked $0.01 into round ${roundId}; endTime ${r.endTime}, drand #${r.drandRound}`);
+  console.log(`staked $${ethers.formatEther(stake)} into round ${roundId}; endTime ${r.endTime}, drand #${r.drandRound}`);
   console.log(`waiting for the KEEPER to resolve...`);
 
   const deadline = Date.now() + 120_000;

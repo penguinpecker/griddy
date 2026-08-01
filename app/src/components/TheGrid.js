@@ -340,7 +340,6 @@ export default function TheGrid() {
         return;
       }
       const rNum = Number(roundId);
-      setRound(rNum);
       pollError.current = null;
 
       // 2. Fire ALL reads in parallel (viem multicall batches these into ~1 RPC call)
@@ -372,8 +371,13 @@ export default function TheGrid() {
       const results = await Promise.all(promises);
       const [rd, counts, totals] = results;
 
-      // Process round data
+      // Process round data. The round id and its timing MUST land together:
+      // advancing `round` while a failed rounds() read leaves `roundEnd`
+      // stale makes the UI think a freshly-opened round has already ended,
+      // so it hides the countdown and offers round+1 instead. (Seen live
+      // when the RPC rate-limited this call but not currentRoundId.)
       if (rd) {
+        setRound(rNum);
         setRoundStart(Number(rd[0]));
         setRoundEnd(Number(rd[1]));
         setPotSize(rd[6].toString());
@@ -387,6 +391,8 @@ export default function TheGrid() {
         } else if (!isResolved) {
           setWinningCell(-1);
         }
+      } else {
+        pollError.current = "RPC: rounds() failed - keeping last known round state";
       }
 
       // Process cell counts
@@ -831,8 +837,8 @@ export default function TheGrid() {
 
   const getStatus = () => {
     if (roundState === "init") return "INITIALIZING...";
-    if (roundState === "revealing") return `ROUND ${displayRound} — FIRST STAKE STARTS THE CLOCK`;
-    if (roundState === "idle") return `ROUND ${displayRound} — FIRST STAKE STARTS THE 30s CLOCK`;
+    if (roundState === "revealing") return `ROUND ${displayRound} — FIRST PLAY STARTS THE CLOCK`;
+    if (roundState === "idle") return `ROUND ${displayRound} — FIRST PLAY STARTS THE 30s CLOCK`;
     if (!ready || !authenticated) return `ROUND ${round} — LOGIN TO PLAY`;
     return `ROUND ${round} ACTIVE`;
   };
@@ -1378,8 +1384,8 @@ export default function TheGrid() {
           <div style={S.timerPanel} className="grid-timer-panel">
             <div style={S.timerLabel}>
               {roundState === "init" ? "INITIALIZING"
-                : roundState === "revealing" ? `ROUND ${displayRound} — FIRST STAKE STARTS THE CLOCK`
-                : roundState === "idle" ? "FIRST STAKE STARTS THE 30s CLOCK"
+                : roundState === "revealing" ? `ROUND ${displayRound} — FIRST PLAY STARTS THE CLOCK`
+                : roundState === "idle" ? "FIRST PLAY STARTS THE 30s CLOCK"
                 : "PICK A SQUARE"}
             </div>
             <div style={{ ...S.timerBig, color: timerColor }} className="grid-timer-big">{isNextRoundView ? "READY" : timerDisplay}</div>
@@ -1493,7 +1499,7 @@ export default function TheGrid() {
             </div>
             <div style={S.statCell}>
               <span style={S.statValueTop}>{myTotalStaked > 0n ? `$${fmt(myTotalStaked)}` : "—"}</span>
-              <span style={S.statLabel}>YOUR STAKE</span>
+              <span style={S.statLabel}>YOU’RE IN</span>
             </div>
           </div>
         </div>
@@ -1533,7 +1539,7 @@ export default function TheGrid() {
 
                   <div style={S.betRows} className="grid-bet-rows">
                     <div style={S.betRow}>
-                      <span>Your stake</span>
+                      <span>You’re in for</span>
                       <b style={{ color: "#EAF1FF" }}>${stakeAmount || "0"}</b>
                     </div>
                     <div style={S.betRow}>
@@ -1579,14 +1585,14 @@ export default function TheGrid() {
                       disabled={belowMin}
                       onClick={() => stakeOnCell(selectedCell, stakeWei)}
                     >
-                      {belowMin ? `MIN $${fmt(minStake)}` : `STAKE $${stakeAmount} ON ${CELL_LABELS[selectedCell]} ◎`}
+                      {belowMin ? `MIN $${fmt(minStake)}` : `PLAY $${stakeAmount} ON ${CELL_LABELS[selectedCell]} ◎`}
                     </button>
                   ) : (
                     <button style={{ ...S.betCta, opacity: 0.45, cursor: "default" }} disabled>PICK A SQUARE ◎</button>
                   )}
                   {myTotalStaked > 0n && (
                     <div style={{ fontSize: 9.5, color: "#55688F", textAlign: "center", fontFamily: "'Inter', sans-serif" }}>
-                      you can stake more cells or top up — no limit
+                      you can play more squares or top up — no limit
                     </div>
                   )}
                 </>

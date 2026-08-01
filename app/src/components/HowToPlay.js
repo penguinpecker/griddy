@@ -91,7 +91,7 @@ export default function HowToPlay() {
         <div style={S.steps}>
           <Step num="01" title="CONNECT & FUND">
             Sign in with your email, social account, or connect an existing wallet.
-            You'll need <Hl>USDC on Arc Testnet</Hl> to play. Stake any amount from <Hl>$0.0001</Hl> per cell pick.
+            You'll need <Hl>USDC on Arc</Hl> to play. Play any amount from <Hl>$0.10</Hl> per square.
           </Step>
 
           <Step num="02" title="PICK YOUR CELL">
@@ -170,7 +170,7 @@ export default function HowToPlay() {
             The winning cell is determined by distributed randomness that nobody can predict or tamper with.
           </InfoCard>
           <InfoCard icon="◈" title="FULLY ON-CHAIN">
-            All bets, payouts, and round results are recorded on <Hl>Arc Testnet</Hl>.
+            All bets, payouts, and round results are recorded on <Hl>Arc</Hl>.
             No custodial risk. Your funds are in the smart contract until you win.
             Verify everything on the Arc explorer.
           </InfoCard>
@@ -181,7 +181,7 @@ export default function HowToPlay() {
           </InfoCard>
           <InfoCard icon="↗" title="INSTANT PAYOUTS">
             Winners receive USDC directly to their wallet within seconds of each round resolving.
-            No claiming, no delays — just on-chain settlement on Arc Testnet.
+            No claiming, no delays — just on-chain settlement on Arc.
           </InfoCard>
         </div>
 
