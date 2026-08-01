@@ -1056,7 +1056,7 @@ export default function TheGrid() {
                   animation: isLatest ? "pulse 1s ease-in-out infinite" : "none",
                 }}>${fmt(r.pot, 5)}</span>
                 <span style={{ textAlign: "right" }}>
-                  {r.txHash ? (
+                  {r.txHash && EXPLORER ? (
                     <a
                       href={`${EXPLORER}/tx/${r.txHash}`}
                       target="_blank"
@@ -1065,6 +1065,11 @@ export default function TheGrid() {
                     >
                       {r.txHash.slice(0, 6)}…{r.txHash.slice(-4)} ↗
                     </a>
+                  ) : r.txHash ? (
+                    // No public explorer on this chain — show the hash itself
+                    <span style={{ fontSize: 10, color: "#8FA3C9", fontFamily: "'JetBrains Mono', monospace" }}>
+                      {r.txHash.slice(0, 6)}…{r.txHash.slice(-4)}
+                    </span>
                   ) : (
                     <span style={{ fontSize: 10, color: "#3A4A73" }}>—</span>
                   )}

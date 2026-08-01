@@ -1,0 +1,23 @@
+{
+  "network": "arc-mainnet",
+  "chainId": 5042,
+  "deployedAt": "2026-08-01T13:21:26.747Z",
+  "deployer": "0x52c59BC217fD0C0b2157f1B2Da1a12635E19Da4c",
+  "feeRecipient": "0x52c59BC217fD0C0b2157f1B2Da1a12635E19Da4c",
+  "drandBeacon": "0xC5c53BB4A93bCe76b99c726FFA1173Be31f14d8d",
+  "griddy": "0xfa29a5a324149a60086B3aeD20cBF42Bd761d5A1",
+  "griddyImpl": "0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c",
+  "params": {
+    "minStakeWei": "100000000000000",
+    "resolverTipWei": "30000000000000",
+    "protocolFeeBps": "500",
+    "roundDuration": "30",
+    "beaconGap": "10"
+  },
+  "drand": {
+    "network": "evmnet",
+    "chainHash": "04f1e9062b8a81f848fded9c12306733282b2727ecced50032187751166ec8c3",
+    "genesis": 1727521075,
+    "period": 3
+  }
+}

@@ -37,6 +37,14 @@ async function fetchBeacon(round: number, deadlineMs = 90_000): Promise<[bigint,
 }
 
 async function main() {
+  // The P2/P3 keys below are keccak of public strings — anyone can derive and
+  // drain them. Harmless for testnet dust, a real loss on mainnet.
+  if (network.config.chainId === 5042) {
+    throw new Error(
+      "Refusing to run on Arc mainnet: this script funds publicly-derivable " +
+      "wallets. Use scripts/measure-resolution.ts (deployer-only stake) instead."
+    );
+  }
   const dep = JSON.parse(
     fs.readFileSync(path.join(__dirname, `../deployments/griddy-${network.name}.json`), "utf8")
   );

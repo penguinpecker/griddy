@@ -1,7 +1,7 @@
 /**
  * Griddy keeper — permissionless drand resolver bot.
  *
- * Watches the Griddy contract on Arc testnet. V5 decouples rounds: betting
+ * Watches the Griddy contract on Arc (mainnet 5042 by default). V5 decouples rounds: betting
  * rolls forward lazily when someone stakes, and ANY ended round with stakers
  * is resolvable permissionlessly (not just the current one). The keeper walks
  * a resolve cursor from just behind the head round; for each ended round with
@@ -15,8 +15,8 @@
  * Env:
  *   PRIVATE_KEY        keeper wallet (needs dust native USDC for gas)
  *   GRIDDY_ADDRESS      deployed Griddy contract
- *   RPC_URL            default https://rpc.testnet.arc.network
- *   CHAIN_ID           default 5042002 (Arc testnet)
+ *   RPC_URL            comma-separated fallback list (Arc mainnet default)
+ *   CHAIN_ID           default 5042 (Arc mainnet); 5042002 = testnet
  *   SEQUENCER_RPC      optional write-only endpoint (lower latency, FCFS)
  *   PORT               SSE port, default 8787
  *   SUPABASE_URL, SUPABASE_SERVICE_KEY   optional history mirror (gz_rounds)
@@ -37,7 +37,7 @@ import { privateKeyToAccount } from "viem/accounts";
 // cloud egress IPs (Railway) hard, so lean on public gateways first.
 const RPC_URLS = (
   process.env.RPC_URLS || process.env.RPC_URL ||
-  "https://arc-testnet.drpc.org,https://5042002.rpc.thirdweb.com,https://rpc.testnet.arc.network"
+  "https://5042.rpc.thirdweb.com,https://arc-mainnet.g.alchemy.com/v2/alch-demo"
 ).split(",").map((s) => s.trim()).filter(Boolean);
 const RPC_URL = RPC_URLS[0];
 const SEQUENCER_RPC = process.env.SEQUENCER_RPC || RPC_URL;
@@ -59,15 +59,17 @@ const DRAND_MIRRORS = [
 const DRAND_GENESIS = 1727521075;
 const DRAND_PERIOD = 3;
 
+const CHAIN_ID = Number(process.env.CHAIN_ID || 5042);
 export const gameChain = defineChain({
-  id: Number(process.env.CHAIN_ID || 5042002),
-  name: "Arc Testnet",
+  id: CHAIN_ID,
+  name: CHAIN_ID === 5042002 ? "Arc Testnet" : "Arc",
   // Arc's native gas token is USDC (18-decimal native representation)
   nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
   rpcUrls: { default: { http: [RPC_URL] } },
-  blockExplorers: {
-    default: { name: "Arc Explorer", url: "https://testnet.arcscan.app" },
-  },
+  // Mainnet has no public explorer yet (network still pre-launch)
+  ...(CHAIN_ID === 5042002
+    ? { blockExplorers: { default: { name: "Arc Explorer", url: "https://testnet.arcscan.app" } } }
+    : {}),
 });
 
 const ABI = parseAbi([
@@ -232,15 +234,32 @@ setInterval(async () => {
 // Resolution is latency-critical: pay a fat tip (blocks are sub-second, so
 // this buys next-block inclusion even under load; ~$0.004 extra per resolve).
 const MIN_TIP = 10_000_000_000n; // 10 gwei
-async function stageTx() {
-  const [nonce, fees] = await Promise.all([
+// A measured resolveRound costs ~382k gas plus the payout loop (each winner
+// transfer is capped at PUSH_GAS=40k by the contract). The gas LIMIT is not
+// just a ceiling: EIP-1559 makes the sender reserve gasLimit * maxFeePerGas
+// up front, so a blanket 12M limit priced a resolve at >1 USDC on mainnet
+// and bounced it for insufficient funds. Reserve what the round can use.
+const RESOLVE_BASE_GAS = 500_000n;
+const GAS_PER_WINNER = 60_000n;
+const MAX_WINNERS = 100n; // contract's MAX_STAKERS_PER_CELL
+function resolveGasLimit(totalStakers = 0n) {
+  const n = totalStakers > MAX_WINNERS ? MAX_WINNERS : totalStakers;
+  return RESOLVE_BASE_GAS + GAS_PER_WINNER * n;
+}
+async function stageTx(totalStakers = 0n) {
+  const [nonce, block, estTip] = await Promise.all([
     publicClient.getTransactionCount({ address: account.address }),
-    publicClient.estimateFeesPerGas(),
+    publicClient.getBlock(),
+    publicClient.estimateMaxPriorityFeePerGas().catch(() => MIN_TIP),
   ]);
-  const estTip = fees.maxPriorityFeePerGas ?? 0n;
-  const tip = estTip * 3n > MIN_TIP ? estTip * 3n : MIN_TIP;
-  const maxFee = (fees.maxFeePerGas ?? 0n) + tip;
-  return { nonce, maxPriorityFeePerGas: tip, maxFeePerGas: maxFee, gas: 12_000_000n };
+  const tip = estTip * 2n > MIN_TIP ? estTip * 2n : MIN_TIP;
+  const maxFee = (block.baseFeePerGas ?? 0n) * 2n + tip;
+  return {
+    nonce,
+    maxPriorityFeePerGas: tip,
+    maxFeePerGas: maxFee,
+    gas: resolveGasLimit(totalStakers),
+  };
 }
 
 async function sendResolve(fn, roundId, args, staged) {
@@ -319,7 +338,7 @@ for (;;) {
       // Ended with stakers and unresolved → resolve it.
       // Stage nonce/gas/fees while waiting for the pinned beacon, then the
       // post-beacon path is fetch → sign → broadcast with zero extra RPCs
-      const staged = await stageTx();
+      const staged = await stageTx(totalStakers);
       const beaconTime = DRAND_GENESIS + (Number(drandRound) - 1) * DRAND_PERIOD;
       const now2 = Math.floor(Date.now() / 1000);
       if (now2 < beaconTime) await sleep(Math.max(0, (beaconTime - now2) * 1000 - 500));

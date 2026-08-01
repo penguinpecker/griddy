@@ -64,14 +64,20 @@ collect the tip.
 
 ## Deployment
 
-Live on **Arc Testnet** (chainId 5042002 · RPC `https://rpc.testnet.arc.network`):
+Live on **Arc mainnet** (chainId 5042 · RPC `https://5042.rpc.thirdweb.com`).
+Arc mainnet is still pre-launch, so it has no public block explorer yet —
+verify state directly over RPC, or with `scripts/verify-payouts.ts`.
 
 | Contract | Address |
 | --- | --- |
-| GriddyV5 (UUPS proxy) | [`0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c`](https://testnet.arcscan.app/address/0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c) |
-| GriddyV5 implementation | `0x6b1e33f80ec6c3fb79e21851441b680f7a0726b3` |
-| DrandBeaconV2 (UUPS proxy) | [`0x93C3B6362D82a9f6495517F0E6Ffa63594596453`](https://testnet.arcscan.app/address/0x93C3B6362D82a9f6495517F0E6Ffa63594596453) |
-| DrandBeaconV2 implementation | `0x12fBbDE353Ef273663Bc09DC3734eC2DFa3C197b` |
+| GriddyV5 (UUPS proxy) | `0xfa29a5a324149a60086B3aeD20cBF42Bd761d5A1` |
+| GriddyV5 implementation | `0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c` |
+| DrandBeaconV2 (UUPS proxy) | `0xC5c53BB4A93bCe76b99c726FFA1173Be31f14d8d` |
+
+Also on **Arc Testnet** (chainId 5042002 · explorer
+[arcscan](https://testnet.arcscan.app)): game proxy
+`0x04E0867F6c9aFe9efD99DBD0E9C521E5Bf5Db62c`, beacon proxy
+`0x93C3B6362D82a9f6495517F0E6Ffa63594596453`.
 
 Every contract deploys behind an upgradeable proxy. Full record in
 `contracts/deployments/griddy-arc-testnet.json`. Arc's precompiles were

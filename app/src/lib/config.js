@@ -1,15 +1,17 @@
 // Single source of truth for chain + contract config.
-// Defaults = Arc testnet (Circle); override via NEXT_PUBLIC_* env to point at
-// another chain.
+// Defaults = Arc MAINNET (Circle, chainId 5042); override via NEXT_PUBLIC_*
+// env to point at testnet (5042002 / rpc.testnet.arc.network /
+// testnet.arcscan.app).
 import { defineChain } from "viem";
 
-export const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID || 5042002);
+export const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID || 5042);
 
 export const RPC_URL =
-  process.env.NEXT_PUBLIC_RPC_URL || "https://rpc.testnet.arc.network";
+  process.env.NEXT_PUBLIC_RPC_URL || "https://5042.rpc.thirdweb.com";
 
-export const EXPLORER =
-  process.env.NEXT_PUBLIC_EXPLORER || "https://testnet.arcscan.app";
+// Arc mainnet has no public block explorer yet (the network is still in its
+// private pre-launch phase). Empty = the UI renders tx hashes as plain text.
+export const EXPLORER = process.env.NEXT_PUBLIC_EXPLORER || "";
 
 export const GRID_ADDR =
   process.env.NEXT_PUBLIC_GRIDDY_ADDR || "0x0000000000000000000000000000000000000000";
@@ -28,8 +30,10 @@ export const DRAND_CHAIN_HASH =
 // The game stakes the native token, so all on-chain amounts are 18-decimal USDC.
 export const gameChain = defineChain({
   id: CHAIN_ID,
-  name: "Arc Testnet",
+  name: CHAIN_ID === 5042002 ? "Arc Testnet" : "Arc",
   nativeCurrency: { name: "USDC", symbol: "USDC", decimals: 18 },
   rpcUrls: { default: { http: [RPC_URL] } },
-  blockExplorers: { default: { name: "Arc Explorer", url: EXPLORER } },
+  ...(EXPLORER
+    ? { blockExplorers: { default: { name: "Arc Explorer", url: EXPLORER } } }
+    : {}),
 });
