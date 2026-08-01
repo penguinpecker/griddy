@@ -83,12 +83,17 @@ const GRID_ABI = [
 // Quick-stake chips (dollars of USDC). Manual entry allowed down to MIN_STAKE.
 // "1000" renders as "1K" in the chip UI; the value string stays "1000" for parseEther.
 const STAKE_CHIPS = ["0.1", "1", "10", "100", "1000"];
+// Host only: the debug box must never render a keyed RPC path/query
+const RPC_HOST = (() => {
+  try { return new URL(RPC_URL).host; } catch { return "unset"; }
+})();
 // Secondary panels live in an on-demand drawer so the play screen stays
 // inside one viewport — nothing is removed, just folded away until asked for.
+// YOUR HISTORY is no longer in here: it lives in the right rail on every
+// viewport (above the bet card on desktop, below it on phones).
 const DRAWER_TABS = [
   { id: "feed", label: "LIVE FEED" },
   { id: "rounds", label: "ROUND HISTORY" },
-  { id: "you", label: "YOUR HISTORY" },
 ];
 const MIN_STAKE_DEFAULT = 100000000000000n; // $0.0001 — fallback only; chain minStakeWei is the source of truth
 const ROUND_DURATION = 30; // V5: fresh 30s window — opened by the first stake after expiry
@@ -947,7 +952,7 @@ export default function TheGrid() {
           {userHistoryLoading ? "SCANNING..." : `${userHistory.length} ROUNDS`}
         </span>
       </div>
-      <div style={{ ...S.tableCols, gridTemplateColumns: "38px 56px 30px 52px 30px 1fr" }}>
+      <div className="grid-hist-row" style={{ ...S.tableCols, gridTemplateColumns: "38px 56px 30px 52px 30px 1fr" }}>
         <span style={S.colLabel}>RES</span>
         <span style={S.colLabel}>ROUND</span>
         <span style={S.colLabel}>CELL</span>
@@ -961,7 +966,7 @@ export default function TheGrid() {
           // all-BigInt (mixing BigInt with Number throws at render)
           const displayAmt = fmt(BigInt(h.amountWei || 0), 5);
           return (
-            <div key={h.roundId} style={{
+            <div key={h.roundId} className="grid-hist-row" style={{
               display: "grid", gridTemplateColumns: "38px 56px 30px 52px 30px 1fr",
               padding: "7px 16px", gap: 4,
               borderBottom: "1px solid rgba(148,178,255,0.04)",
@@ -1014,6 +1019,33 @@ export default function TheGrid() {
       )}
     </div>
   );
+
+  // Rail slot: the same YOUR HISTORY table, with its logged-out / empty states
+  // framed so the panel keeps its shape while it fills the right column.
+  const renderUserHistoryPanel = () => {
+    if (authenticated && userHistory.length > 0) return renderUserHistory();
+    return (
+      <div style={S.tablePanel} className="grid-table-panel">
+        <div style={S.tableHead}>
+          <span style={S.tableTitle}>YOUR HISTORY</span>
+          <span style={S.tableMeta}>
+            {!authenticated ? "LOCKED" : userHistoryLoading ? "SCANNING..." : "0 ROUNDS"}
+          </span>
+        </div>
+        <div style={S.histEmpty} className="grid-hist-empty">
+          <span style={S.histEmptyMark}>{userHistoryLoading ? "⟐" : authenticated ? "◇" : "🛡"}</span>
+          <span style={{ ...S.drawerEmpty, padding: "10px 4px 5px" }}>
+            {!authenticated
+              ? "LOG IN TO SEE YOUR ROUND HISTORY"
+              : userHistoryLoading
+                ? "⟐ SCANNING ROUNDS..."
+                : "NO ROUNDS YET — STAKE A CELL TO START YOUR HISTORY"}
+          </span>
+          <span style={S.histEmptySub}>every round you play lands here — win or lose, straight from the chain</span>
+        </div>
+      </div>
+    );
+  };
 
   const renderRoundHistory = () => {
     const totalPages = Math.ceil(roundHistory.length / HISTORY_PAGE_SIZE) || 1;
@@ -1324,14 +1356,14 @@ export default function TheGrid() {
                     )}
                     <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
                       <button
-                        style={{ ...S.claimBtn, flex: 1, fontSize: 11, padding: "10px", opacity: withdrawing ? 0.6 : 1 }}
+                        style={{ ...S.claimBtn, flex: "1 1 0", width: "auto", minWidth: 0, fontSize: 11, padding: "10px", opacity: withdrawing ? 0.6 : 1 }}
                         onClick={withdrawUSDC}
                         disabled={withdrawing}
                       >
                         {withdrawing ? "SENDING..." : "SEND"}
                       </button>
                       <button
-                        style={{ ...S.claimBtn, fontSize: 11, padding: "10px 16px", border: "1px solid rgba(148,178,255,0.2)", color: "#8FA3C9", background: "none", boxShadow: "none" }}
+                        style={{ ...S.claimBtn, flex: "0 0 auto", width: "auto", fontSize: 11, padding: "10px 16px", border: "1px solid rgba(148,178,255,0.2)", color: "#8FA3C9", background: "none", boxShadow: "none" }}
                         onClick={() => { setWalletDropdown(false); setWalletView("menu"); setWithdrawAddr(""); setWithdrawAmt(""); setWithdrawError(""); setWithdrawSuccess(""); }}
                       >
                         CANCEL
@@ -1483,8 +1515,8 @@ export default function TheGrid() {
 
           {/* Status */}
           <div style={S.statusBar} className="grid-status-bar">
-            <span style={{ fontWeight: 600 }}>{getStatus()}</span>
-            <span className="grid-tap-hint" style={{ color: "#55688F", fontSize: 10 }}>TAP TO SELECT · DOUBLE-TAP TO ENTER</span>
+            <span style={S.statusText}>{getStatus()}</span>
+            <span className="grid-tap-hint" style={{ color: "#55688F", fontSize: 9.5, letterSpacing: 0.8, flexShrink: 0 }}>TAP TO SELECT · DOUBLE-TAP TO ENTER</span>
           </div>
 
           {/* Stat row — real data only */}
@@ -1507,6 +1539,12 @@ export default function TheGrid() {
         {/* ─── BET COLUMN — right of the grid on desktop/tablet,
              stacked under it on mobile ─── */}
         <div style={S.colRight} className="grid-bet-col">
+
+          {/* Your history — above the entry controls on desktop, reordered
+               below them on phones so the CTA stays the first thing you reach */}
+          <div style={S.histSlot} className="grid-hist-slot">
+            {renderUserHistoryPanel()}
+          </div>
 
           {/* Bet panel — all viewports */}
           <div style={S.betPanel} className="grid-bet-panel">
@@ -1620,7 +1658,7 @@ export default function TheGrid() {
           <b>⚠ DEBUG:</b> Round = 0 (not loading). Polls: {pollCount.current}.
           {pollError.current && <span> Error: {pollError.current}</span>}
           {!pollError.current && <span> No error caught — poll may not have run yet. Check console.</span>}
-          <br/>Chain: {CHAIN_ID} | RPC: {RPC_URL} | Contract: {GRID_ADDR.slice(0,10)}...
+          <br/>Chain: {CHAIN_ID} | RPC: {RPC_HOST} | Contract: {GRID_ADDR.slice(0,10)}...
         </div>
       )}
 
@@ -1672,17 +1710,6 @@ export default function TheGrid() {
             <div style={S.drawerBody} className="grid-user-history-scroll">
               {openPanel === "feed" && renderFeed()}
               {openPanel === "rounds" && renderRoundHistory()}
-              {openPanel === "you" && (
-                authenticated ? (
-                  userHistory.length > 0 ? renderUserHistory() : (
-                    <div style={S.drawerEmpty}>
-                      {userHistoryLoading ? "⟐ SCANNING ROUNDS..." : "NO ROUNDS YET — STAKE A CELL TO START YOUR HISTORY"}
-                    </div>
-                  )
-                ) : (
-                  <div style={S.drawerEmpty}>LOG IN TO SEE YOUR ROUND HISTORY</div>
-                )
-              )}
             </div>
           </div>
         </>
@@ -1732,9 +1759,21 @@ export default function TheGrid() {
           height: 100dvh !important;
           max-height: 100dvh !important;
           overflow: hidden !important;
-          --gsize: clamp(220px, calc(100dvh - 478px), 520px);
+          --gsize: clamp(220px, calc(100dvh - 430px), 560px);
         }
         .grid-outer-panel { width: min(100%, var(--gsize)) !important; }
+        /* Right rail: the history table flexes into the leftover height and
+           scrolls inside itself instead of pushing the page past one screen */
+        .grid-hist-slot > .grid-table-panel {
+          display: flex; flex-direction: column;
+          height: 100%; min-height: 0;
+        }
+        .grid-hist-slot .grid-user-history-scroll {
+          flex: 1 1 auto; min-height: 0;
+          max-height: none !important;
+        }
+        .grid-hist-slot .grid-table-panel > div:first-child,
+        .grid-hist-slot .grid-table-panel > div:nth-child(2) { flex-shrink: 0; }
         .grid-wallet-dropdown { max-height: calc(100dvh - 88px) !important; overflow-y: auto !important; }
         .wallet-addr-mobile { display: none !important; }
         .wallet-addr-desktop { display: inline !important; }
@@ -1771,7 +1810,13 @@ export default function TheGrid() {
 
         /* ── MOBILE ≤768: single column — bet controls stack under the grid ── */
         @media (max-width: 768px) {
-          .grid-root { --gsize: clamp(150px, calc(100dvh - 604px), 460px); }
+          /* Board is width-led on phones so every key stays a ≥44px tap target;
+             the main column scrolls when the stack can't fit one screen. */
+          .grid-root { --gsize: clamp(320px, calc(100dvh - 420px), 520px); }
+          /* Entry controls first, history after — the CTA stays reachable */
+          .grid-hist-slot { order: 9 !important; flex: 0 0 auto !important; }
+          .grid-hist-slot > .grid-table-panel { height: auto !important; }
+          .grid-hist-slot .grid-user-history-scroll { max-height: 240px !important; }
           .grid-header { position: sticky !important; top: 0 !important; height: 54px !important; }
           .grid-main { padding: 0 12px !important; }
           .grid-stage { padding: 6px 0 6px !important; }
@@ -1812,10 +1857,15 @@ export default function TheGrid() {
           .grid-bet-rows { gap: 3px !important; }
           .grid-bet-note { font-size: 9px !important; line-height: 1.35 !important; }
           .grid-bet-col { gap: 6px !important; }
-          .stake-chip { min-height: 30px !important; font-size: 11px !important; }
           .grid-drawer { width: calc(100vw - 16px) !important; bottom: 8px !important; max-height: 76dvh !important; }
           .grid-foot-note { display: none !important; }
-          .grid-table-panel button { min-height: 36px; }
+          /* Touch targets: every interactive element clears 40px on phones */
+          .stake-chip { min-height: 42px !important; font-size: 12px !important; }
+          .grid-table-panel button { min-height: 40px; }
+          .grid-dock button { min-height: 40px !important; }
+          .grid-fair-link { min-height: 40px; }
+          .grid-header button { min-height: 40px; }
+          .grid-drawer button { min-height: 40px; }
         }
 
         /* ── SHORT VIEWPORTS: shave the hero before the board ── */
@@ -1832,6 +1882,21 @@ export default function TheGrid() {
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+          }
+          /* narrow phones: give POT and P&L elastic columns so the dollar
+             figures print in full instead of ellipsising */
+          .grid-hist-row {
+            grid-template-columns: 32px 44px 26px minmax(0,0.92fr) 26px minmax(0,1.08fr) !important;
+            padding-left: 10px !important;
+            padding-right: 10px !important;
+            gap: 2px !important;
+          }
+          .grid-hist-row > span { letter-spacing: 0.5px !important; }
+          /* the empty-state copy is prose, not a table cell — let it wrap */
+          .grid-hist-empty span {
+            overflow: visible !important;
+            text-overflow: clip !important;
+            white-space: normal !important;
           }
         }
 
@@ -1986,21 +2051,24 @@ const S = {
   },
   main: { display: "flex", flex: 1, position: "relative", zIndex: 5, width: "100%", padding: "0 24px", minHeight: 0, alignItems: "stretch", justifyContent: "center", overflowY: "auto", overflowX: "hidden" },
   // ── One-screen stage: grid column left, bet column right ──
-  stage: { width: "100%", maxWidth: 1180, display: "flex", flexDirection: "column", minHeight: 0, padding: "12px 0 10px" },
+  stage: { width: "100%", maxWidth: 1120, display: "flex", flexDirection: "column", minHeight: 0, padding: "12px 0 10px" },
   cols: {
     flex: 1, minHeight: 0, display: "grid",
     // left column tracks the board width so the timer/stat rails line up with it
-    gridTemplateColumns: "minmax(0, min(100%, var(--gsize))) clamp(290px, 27%, 340px)",
-    gap: 22, alignItems: "stretch", justifyContent: "center",
+    gridTemplateColumns: "minmax(0, min(100%, var(--gsize))) clamp(318px, 30%, 384px)",
+    gap: 24, alignItems: "stretch", justifyContent: "center",
   },
-  colLeft: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8, minWidth: 0 },
-  colRight: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8, minWidth: 0 },
+  colLeft: { display: "flex", flexDirection: "column", alignItems: "center", gap: 6, minWidth: 0 },
+  colRight: { display: "flex", flexDirection: "column", alignItems: "stretch", gap: 9, minWidth: 0, minHeight: 0 },
+  // YOUR HISTORY takes whatever height the bet card leaves over and scrolls
+  // internally — the right rail then reaches the bottom of the stage
+  histSlot: { width: "100%", flex: "1 1 auto", minHeight: 118, display: "flex", flexDirection: "column" },
   // grow into spare height, but never shrink under the board — a squeezed
   // wrapper would overlap the timer/stat rows instead of scrolling
   gridWrap: { width: "100%", flex: "1 0 auto", display: "flex", alignItems: "center", justifyContent: "center" },
   hero: { display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 },
   roundTag: { fontSize: 10, letterSpacing: 3, color: "#55688F", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" },
-  potLabel: { fontSize: 10, letterSpacing: 3, color: "#8FA3C9", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", margin: "6px 0 0" },
+  potLabel: { fontSize: 10, letterSpacing: 3, color: "#8FA3C9", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", margin: "2px 0 0" },
   potHero: {
     fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 46, lineHeight: 1.1,
     color: "#5FA6FF", textShadow: "0 0 28px rgba(62,139,255,0.45)", whiteSpace: "nowrap",
@@ -2011,14 +2079,14 @@ const S = {
     fontSize: 9.5, letterSpacing: 1, color: "#8FA3C9",
     fontFamily: "'JetBrains Mono', monospace", fontWeight: 600,
     background: "rgba(148,178,255,0.06)", border: "1px solid rgba(148,178,255,0.12)",
-    borderRadius: 999, padding: "4px 12px", marginTop: 6,
+    borderRadius: 999, padding: "4px 12px", marginTop: 3,
   },
   revealChip: {
     display: "inline-flex", alignItems: "center", gap: 6,
     fontSize: 9.5, letterSpacing: 1.5, fontWeight: 700,
     fontFamily: "'JetBrains Mono', monospace", color: "#6FB0FF",
     background: "rgba(62,139,255,0.10)", border: "1px solid rgba(62,139,255,0.35)",
-    borderRadius: 999, padding: "4px 12px", marginTop: 6,
+    borderRadius: 999, padding: "4px 12px", marginTop: 3,
     animation: "pulse 1.4s ease-in-out infinite",
   },
   revealChipWin: {
@@ -2031,7 +2099,7 @@ const S = {
   timerPanel: {
     width: "100%", flexShrink: 0,
     background: "#0A1228", border: "1px solid rgba(148,178,255,0.08)",
-    borderRadius: 18, padding: "8px 16px 10px",
+    borderRadius: 18, padding: "7px 16px 8px",
     display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
   },
   timerLabel: { fontSize: 9, letterSpacing: 3, color: "#55688F", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" },
@@ -2122,7 +2190,10 @@ const S = {
     zIndex: 2,
   },
   cellLabel: { position: "absolute", top: 7, left: 9, fontSize: 8, letterSpacing: 1, opacity: 0.45 },
-  statusBar: { display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, width: "100%", padding: "2px 4px", fontSize: 10, letterSpacing: 1.5, color: "#55688F", flexShrink: 0, whiteSpace: "nowrap" },
+  statusBar: { display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, width: "100%", padding: "2px 4px", fontSize: 10, letterSpacing: 1.5, color: "#55688F", flexShrink: 0, whiteSpace: "nowrap", overflow: "hidden" },
+  // the round line is the one that truncates — the same words are spelled out
+  // in full in the timer panel directly above it
+  statusText: { fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" },
 
   // ── 3-cell stat row ──
   statRow: {
@@ -2160,7 +2231,7 @@ const S = {
   claimingDot: { width: 8, height: 8, borderRadius: "50%", background: "#3E8BFF", animation: "pulse 1s ease-in-out infinite" },
   errorBox: { padding: "10px 14px", borderRadius: 12, border: "1px solid rgba(255,107,94,0.3)", background: "rgba(255,107,94,0.08)", color: "#FF6B5E", fontSize: 11, cursor: "pointer", lineHeight: 1.4 },
   fairLink: {
-    display: "flex", alignItems: "center", gap: 6, flexShrink: 0,
+    display: "flex", alignItems: "center", justifyContent: "center", gap: 6, flexShrink: 0,
     fontSize: 10, letterSpacing: 2, fontWeight: 700,
     color: "#8FA3C9", textDecoration: "none",
     fontFamily: "'JetBrains Mono', monospace",
@@ -2282,6 +2353,18 @@ const S = {
   drawerEmpty: {
     padding: "26px 16px", textAlign: "center", color: "#55688F",
     fontSize: 10.5, letterSpacing: 1.5, fontFamily: "'JetBrains Mono', monospace",
+  },
+  histEmpty: {
+    flex: "1 1 auto", minHeight: 0, display: "flex", flexDirection: "column",
+    alignItems: "center", justifyContent: "center", gap: 2, padding: "18px 18px 22px",
+  },
+  histEmptyMark: {
+    fontSize: 20, color: "#2B3A63", lineHeight: 1,
+    opacity: 0.9, filter: "grayscale(0.4)",
+  },
+  histEmptySub: {
+    fontSize: 9.5, color: "#3A4A73", lineHeight: 1.5, textAlign: "center",
+    fontFamily: "'Inter', sans-serif", letterSpacing: 0, maxWidth: 230,
   },
   dropdownItem: {
     display: "flex", alignItems: "center", gap: 10,
