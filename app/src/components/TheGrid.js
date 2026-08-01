@@ -1620,7 +1620,7 @@ export default function TheGrid() {
           <b>⚠ DEBUG:</b> Round = 0 (not loading). Polls: {pollCount.current}.
           {pollError.current && <span> Error: {pollError.current}</span>}
           {!pollError.current && <span> No error caught — poll may not have run yet. Check console.</span>}
-          <br/>RPC: Arc Testnet | Contract: {GRID_ADDR.slice(0,10)}...
+          <br/>Chain: {CHAIN_ID} | RPC: {RPC_URL} | Contract: {GRID_ADDR.slice(0,10)}...
         </div>
       )}
 

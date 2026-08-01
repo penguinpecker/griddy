@@ -6,8 +6,17 @@ import { defineChain } from "viem";
 
 export const CHAIN_ID = Number(process.env.NEXT_PUBLIC_CHAIN_ID || 5042);
 
+// Default to our own same-origin proxy (app/api/rpc): Arc's upstream RPC
+// sends no CORS headers, so the browser cannot call it directly. A relative
+// path is resolved against the current origin in the browser and against
+// localhost during prerender.
+const RAW_RPC = process.env.NEXT_PUBLIC_RPC_URL || "/api/rpc";
 export const RPC_URL =
-  process.env.NEXT_PUBLIC_RPC_URL || "https://arc-mainnet.g.alchemy.com/v2/alch-demo";
+  RAW_RPC.startsWith("/") && typeof window !== "undefined"
+    ? window.location.origin + RAW_RPC
+    : RAW_RPC.startsWith("/")
+      ? "http://localhost:3000" + RAW_RPC
+      : RAW_RPC;
 
 // Arc mainnet has no public block explorer yet (the network is still in its
 // private pre-launch phase). Empty = the UI renders tx hashes as plain text.
