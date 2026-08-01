@@ -83,6 +83,13 @@ const GRID_ABI = [
 // Quick-stake chips (dollars of USDC). Manual entry allowed down to MIN_STAKE.
 // "1000" renders as "1K" in the chip UI; the value string stays "1000" for parseEther.
 const STAKE_CHIPS = ["0.1", "1", "10", "100", "1000"];
+// Secondary panels live in an on-demand drawer so the play screen stays
+// inside one viewport — nothing is removed, just folded away until asked for.
+const DRAWER_TABS = [
+  { id: "feed", label: "LIVE FEED" },
+  { id: "rounds", label: "ROUND HISTORY" },
+  { id: "you", label: "YOUR HISTORY" },
+];
 const MIN_STAKE_DEFAULT = 100000000000000n; // $0.0001 — fallback only; chain minStakeWei is the source of truth
 const ROUND_DURATION = 30; // V5: fresh 30s window — opened by the first stake after expiry
 const GRID_SIZE = 5;
@@ -177,6 +184,7 @@ export default function TheGrid() {
   const userHistoryLoaded = useRef(false);
   const [scanLine, setScanLine] = useState(0);
   const [error, setError] = useState(null);
+  const [openPanel, setOpenPanel] = useState(null); // null | "feed" | "rounds" | "you"
   const [mobileMenu, setMobileMenu] = useState(false);
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [withdrawAddr, setWithdrawAddr] = useState("");
@@ -1152,7 +1160,7 @@ export default function TheGrid() {
         </div>
         {/* Center — nav, hidden on mobile */}
         <nav className="grid-header-nav" style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
-          <button onClick={()=>window.location.href="/"} className="nav-btn-home" style={{background:"transparent",border:"1px solid transparent",fontFamily:"'JetBrains Mono',monospace",fontSize:10,fontWeight:700,color:"#55688F",cursor:"pointer",letterSpacing:2,padding:"6px 12px",borderRadius:999,transition:"color 0.2s"}}>HOME</button>
+          <button onClick={()=>window.location.href="/home"} className="nav-btn-home" style={{background:"transparent",border:"1px solid transparent",fontFamily:"'JetBrains Mono',monospace",fontSize:10,fontWeight:700,color:"#55688F",cursor:"pointer",letterSpacing:2,padding:"6px 12px",borderRadius:999,transition:"color 0.2s"}}>HOME</button>
           <button className="nav-btn-play" style={{background:"rgba(62,139,255,0.08)",border:"1px solid rgba(62,139,255,0.25)",fontFamily:"'JetBrains Mono',monospace",fontSize:10,fontWeight:700,color:"#3E8BFF",cursor:"default",letterSpacing:2,padding:"6px 12px",borderRadius:999}}>PLAY</button>
         </nav>
         {/* Right — balance pill + wallet */}
@@ -1334,17 +1342,14 @@ export default function TheGrid() {
 
       {/* ─── MAIN ─── */}
       <div style={S.main} className="grid-main">
-
-        {/* ─── LEFT RAIL: live feed (desktop) ─── */}
-        <aside className="grid-aside" style={S.aside}>
-          {renderFeed()}
-          {authenticated && userHistory.length > 0 && renderUserHistory()}
-          <div style={S.railHint}>RANDOMNESS BY DRAND — BEACON VERIFIED ON-CHAIN EVERY ROUND</div>
-        </aside>
+        <div style={S.stage} className="grid-stage">
+        {/* Grid on the left, bet controls on the right (stacked ≤768) */}
+        <div style={S.cols} className="grid-cols">
 
         {/* ─── GAME COLUMN ─── */}
-        <div style={S.gridArea} className="grid-game-area">
+        <div style={S.colLeft} className="grid-game-area">
           {/* Round tag + pot hero */}
+          <div style={S.hero} className="grid-hero">
           <div style={S.roundTag}>ROUND {roundState === "init" ? "—" : displayRound}</div>
           <div style={S.potLabel} className="grid-pot-label">✦ TOTAL POT ✦</div>
           <div style={S.potHero} className="grid-pot-hero">
@@ -1367,6 +1372,7 @@ export default function TheGrid() {
               ✦ ROUND {round} WINNER — {CELL_LABELS[winningCell] || winningCell}
             </div>
           )}
+          </div>
 
           {/* Countdown */}
           <div style={S.timerPanel} className="grid-timer-panel">
@@ -1386,7 +1392,9 @@ export default function TheGrid() {
             </div>
           </div>
 
-          {/* Grid */}
+          {/* Grid — width is capped against the leftover viewport height
+               (--gsize) so the board never pushes the page past one screen */}
+          <div style={S.gridWrap} className="grid-wrap">
           <div style={S.gridOuter} className="grid-outer-panel">
             {/* Grid flash on new round */}
             {gridFlash && (
@@ -1465,6 +1473,7 @@ export default function TheGrid() {
               })}
             </div>
           </div>
+          </div>
 
           {/* Status */}
           <div style={S.statusBar} className="grid-status-bar">
@@ -1487,6 +1496,11 @@ export default function TheGrid() {
               <span style={S.statLabel}>YOUR STAKE</span>
             </div>
           </div>
+        </div>
+
+        {/* ─── BET COLUMN — right of the grid on desktop/tablet,
+             stacked under it on mobile ─── */}
+        <div style={S.colRight} className="grid-bet-col">
 
           {/* Bet panel — all viewports */}
           <div style={S.betPanel} className="grid-bet-panel">
@@ -1517,7 +1531,7 @@ export default function TheGrid() {
                     stakeWei={stakeWei}
                   />
 
-                  <div style={S.betRows}>
+                  <div style={S.betRows} className="grid-bet-rows">
                     <div style={S.betRow}>
                       <span>Your stake</span>
                       <b style={{ color: "#EAF1FF" }}>${stakeAmount || "0"}</b>
@@ -1536,7 +1550,7 @@ export default function TheGrid() {
                         </b>
                       </div>
                     )}
-                    <div style={S.betNote}>
+                    <div style={S.betNote} className="grid-bet-note">
                       pro-rata: your share of the winning cell × (pot − {(Number(feeConfig.current.feeBps) / 100).toFixed(0)}% fee). {(100 - Number(feeConfig.current.feeBps) / 100).toFixed(0)}% of every pot goes to players.
                     </div>
                   </div>
@@ -1583,29 +1597,11 @@ export default function TheGrid() {
           {/* Provably fair link */}
           <a href="/how-to-play" style={S.fairLink} className="grid-fair-link">🛡 PROVABLY FAIR ›</a>
 
-          {/* ─── MOBILE LIVE FEED (desktop shows it in the left rail) ─── */}
-          <div className="grid-feed-mobile" style={{ width: "100%", marginTop: 14 }}>
-            {renderFeed()}
-          </div>
-
-          {/* ─── MOBILE ROUND HISTORY (desktop shows it in the right rail) ─── */}
-          <div className="grid-history-mobile" style={{ width: "100%", marginTop: 14 }}>
-            {renderRoundHistory()}
-          </div>
-
-          {/* ─── MOBILE USER HISTORY (desktop shows it in the left rail) ─── */}
-          {authenticated && userHistory.length > 0 && (
-            <div className="grid-user-history-mobile" style={{ width: "100%", marginTop: 14 }}>
-              {renderUserHistory()}
-            </div>
-          )}
+          <div style={S.railHint} className="grid-rail-hint">RANDOMNESS BY DRAND — BEACON VERIFIED ON-CHAIN EVERY ROUND</div>
         </div>
 
-        {/* ─── RIGHT RAIL: round history (desktop) ─── */}
-        <aside className="grid-aside" style={S.aside}>
-          {renderRoundHistory()}
-        </aside>
-
+        </div>
+        </div>
       </div>
 
       {/* Debug: show poll errors visibly */}
@@ -1622,14 +1618,69 @@ export default function TheGrid() {
         </div>
       )}
 
-      {/* ─── FOOTER ─── */}
+      {/* ─── FOOTER + PANEL DOCK ─── */}
       <footer style={S.footer}>
-        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 8 }} className="grid-foot-brand">
           <GriddyMark size={18} />
           <span style={S.gridOnline}>GRIDDY ONLINE</span>
         </span>
-        <span style={{ fontSize: 10, color: "#55688F", letterSpacing: 1.5 }}>ON-CHAIN · ARC TESTNET · RANDOMNESS BY DRAND</span>
+        {/* Dock — opens the secondary panels on demand, keeping the play
+             screen itself inside one viewport */}
+        <div style={S.dock} className="grid-dock">
+          {DRAWER_TABS.map((t) => {
+            const on = openPanel === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setOpenPanel(on ? null : t.id)}
+                style={{ ...S.dockBtn, ...(on ? S.dockBtnOn : {}) }}
+              >
+                {t.label}
+                {t.id === "feed" && sseConnected && <span style={S.dockLiveDot} />}
+              </button>
+            );
+          })}
+        </div>
+        <span style={{ fontSize: 10, color: "#55688F", letterSpacing: 1.5 }} className="grid-foot-note">ON-CHAIN · ARC · RANDOMNESS BY DRAND</span>
       </footer>
+
+      {/* ─── PANEL DRAWER: live feed / round history / your history ─── */}
+      {openPanel && (
+        <>
+          <div style={S.drawerScrim} onClick={() => setOpenPanel(null)} />
+          <div style={S.drawer} className="grid-drawer">
+            <div style={S.drawerHead}>
+              <div style={S.drawerTabs}>
+                {DRAWER_TABS.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => setOpenPanel(t.id)}
+                    style={{ ...S.drawerTab, ...(openPanel === t.id ? S.drawerTabOn : {}) }}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              <button style={S.drawerClose} onClick={() => setOpenPanel(null)}>✕</button>
+            </div>
+            <div style={S.drawerBody} className="grid-user-history-scroll">
+              {openPanel === "feed" && renderFeed()}
+              {openPanel === "rounds" && renderRoundHistory()}
+              {openPanel === "you" && (
+                authenticated ? (
+                  userHistory.length > 0 ? renderUserHistory() : (
+                    <div style={S.drawerEmpty}>
+                      {userHistoryLoading ? "⟐ SCANNING ROUNDS..." : "NO ROUNDS YET — STAKE A CELL TO START YOUR HISTORY"}
+                    </div>
+                  )
+                ) : (
+                  <div style={S.drawerEmpty}>LOG IN TO SEE YOUR ROUND HISTORY</div>
+                )
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       {/* ─── CSS ─── */}
       <style>{`
@@ -1669,48 +1720,31 @@ export default function TheGrid() {
         }
         .nav-btn-home:hover { color: #3E8BFF !important; }
         .nav-btn-play { pointer-events: none; }
-        .grid-root { min-height: 100dvh !important; }
-        .grid-aside { position: sticky; top: 20px; }
+        /* One screen, no page scroll: the root is exactly the viewport and the
+           board is capped against whatever height the chrome leaves over. */
+        .grid-root {
+          height: 100dvh !important;
+          max-height: 100dvh !important;
+          overflow: hidden !important;
+          --gsize: clamp(220px, calc(100dvh - 478px), 520px);
+        }
+        .grid-outer-panel { width: min(100%, var(--gsize)) !important; }
+        .grid-wallet-dropdown { max-height: calc(100dvh - 88px) !important; overflow-y: auto !important; }
         .wallet-addr-mobile { display: none !important; }
         .wallet-addr-desktop { display: inline !important; }
         .grid-table-panel { min-width: 0; }
         .grid-user-history-scroll::-webkit-scrollbar,
-        .grid-aside::-webkit-scrollbar { width: 4px; }
+        .grid-main::-webkit-scrollbar { width: 4px; }
         .grid-user-history-scroll::-webkit-scrollbar-track,
-        .grid-aside::-webkit-scrollbar-track { background: rgba(148,178,255,0.04); }
+        .grid-main::-webkit-scrollbar-track { background: rgba(148,178,255,0.04); }
         .grid-user-history-scroll::-webkit-scrollbar-thumb,
-        .grid-aside::-webkit-scrollbar-thumb { background: rgba(62,139,255,0.3); border-radius: 2px; }
+        .grid-main::-webkit-scrollbar-thumb { background: rgba(62,139,255,0.3); border-radius: 2px; }
 
-        /* ── DESKTOP ≥1200: full-canvas three-column app layout ── */
-        @media (min-width: 1200px) {
-          .grid-main {
-            display: grid !important;
-            grid-template-columns: minmax(0, 1fr) min(640px, 100%) minmax(0, 1fr) !important;
-            align-items: start !important;
-            justify-content: stretch !important;
-            max-width: none !important;
-            width: 100% !important;
-            padding: 0 28px !important;
-            gap: 24px !important;
-          }
-          .grid-game-area { width: 100% !important; max-width: 640px !important; margin: 0 auto !important; }
-          .grid-aside {
-            width: auto !important;
-            min-width: 0 !important;
-            max-height: calc(100vh - 96px);
-            max-height: calc(100dvh - 96px);
-            overflow-y: auto;
-            overscroll-behavior: contain;
-          }
-          .grid-history-mobile { display: none !important; }
-          .grid-user-history-mobile { display: none !important; }
-          .grid-feed-mobile { display: none !important; }
-        }
-
-        /* ── TABLET 769–1199: centered game column, rails stack below ── */
+        /* ── TABLET 769–1199: same two-column play area, tighter gap ── */
         @media (max-width: 1199px) {
-          .grid-aside { display: none !important; }
-          .grid-main { flex-direction: column !important; align-items: center !important; }
+          .grid-main { padding: 0 16px !important; }
+          .grid-cols { gap: 16px !important; }
+          .grid-rail-hint { display: none !important; }
         }
 
         @media (max-width: 640px) {
@@ -1721,46 +1755,68 @@ export default function TheGrid() {
           .wallet-addr-mobile { display: flex !important; }
           .grid-logo-text { font-size: 17px !important; }
           .grid-header-wallet-btn button { font-size: 9px !important; padding: 6px 10px !important; letter-spacing: 0.5px !important; }
+          .grid-dock { gap: 4px !important; }
+          .grid-dock button { font-size: 8px !important; padding: 5px 7px !important; letter-spacing: 0.4px !important; }
+          .grid-foot-brand { min-width: 0 !important; gap: 6px !important; }
+          .grid-foot-brand span { font-size: 8px !important; letter-spacing: 0.5px !important; white-space: nowrap !important; }
+          footer { padding: 7px 10px !important; }
+          .grid-tap-hint { display: none !important; }
         }
 
-        /* ── MOBILE ≤768: full-bleed app layout, tight vertical rhythm ── */
+        /* ── MOBILE ≤768: single column — bet controls stack under the grid ── */
         @media (max-width: 768px) {
+          .grid-root { --gsize: clamp(150px, calc(100dvh - 604px), 460px); }
           .grid-header { position: sticky !important; top: 0 !important; height: 54px !important; }
           .grid-main { padding: 0 12px !important; }
+          .grid-stage { padding: 6px 0 6px !important; }
+          .grid-cols { grid-template-columns: minmax(0, 1fr) !important; gap: 8px !important; }
+          .grid-bet-col { max-width: 100% !important; }
           .grid-wallet-dropdown { right: 0 !important; left: auto !important; max-width: calc(100vw - 16px) !important; }
           .grid-game-area {
             width: 100% !important;
             max-width: 100% !important;
-            padding: 8px 0 10px !important;
+            gap: 6px !important;
             justify-content: flex-start !important;
-            flex: 1 1 auto !important;
-            min-height: 0 !important;
           }
           .grid-header-wallet-btn { font-size: 10px !important; }
-          .grid-pot-label { margin: 6px 0 0 !important; }
-          .grid-pot-hero { font-size: clamp(30px, 10.5vw, 42px) !important; }
-          .grid-pot-unit { font-size: 15px !important; }
-          .grid-last-pill { margin-top: 6px !important; padding: 4px 10px !important; }
+          .grid-pot-label { margin: 3px 0 0 !important; }
+          .grid-pot-hero { font-size: clamp(28px, 9.5vw, 38px) !important; }
+          .grid-pot-unit { font-size: 14px !important; }
+          .grid-last-pill { margin-top: 5px !important; padding: 3px 10px !important; }
           .grid-timer-panel {
-            margin-top: 8px !important;
-            padding: 8px 14px 10px !important;
+            padding: 7px 14px 8px !important;
             flex-direction: row !important;
             flex-wrap: wrap !important;
             justify-content: space-between !important;
             align-items: center !important;
-            gap: 6px !important;
+            gap: 5px !important;
             border-radius: 16px !important;
           }
           .grid-timer-big { font-size: 22px !important; line-height: 1 !important; }
           .grid-timer-bar { width: 100% !important; }
-          .grid-outer-panel { margin-top: 10px !important; padding: 10px !important; border-radius: 18px !important; }
-          .grid-cells { gap: 8px !important; }
-          .grid-status-bar { margin-top: 4px !important; padding: 6px 2px !important; }
-          .grid-stat-row { margin-top: 6px !important; padding: 9px 0 !important; border-radius: 14px !important; }
-          .grid-bet-panel { margin-top: 8px !important; padding: 12px !important; gap: 9px !important; border-radius: 16px !important; }
-          .stake-chip { min-height: 40px !important; font-size: 11px !important; }
-          .grid-fair-link { margin-top: 10px !important; }
-          .grid-table-panel button { min-height: 40px; }
+          .grid-outer-panel { padding: 9px !important; border-radius: 18px !important; }
+          .grid-cells { gap: 7px !important; }
+          .grid-status-bar { padding: 2px !important; }
+          .grid-stat-row { padding: 7px 0 !important; border-radius: 14px !important; }
+          /* Bet controls compress on mobile so the board keeps its size —
+             every control stays, just tighter */
+          .grid-bet-panel { padding: 10px !important; gap: 6px !important; border-radius: 16px !important; }
+          .grid-bet-panel > button { padding: 11px 14px !important; }
+          .grid-bet-panel input { padding: 7px 42px 7px 12px !important; font-size: 15px !important; }
+          .grid-bet-rows { gap: 3px !important; }
+          .grid-bet-note { font-size: 9px !important; line-height: 1.35 !important; }
+          .grid-bet-col { gap: 6px !important; }
+          .stake-chip { min-height: 30px !important; font-size: 11px !important; }
+          .grid-drawer { width: calc(100vw - 16px) !important; bottom: 8px !important; max-height: 76dvh !important; }
+          .grid-foot-note { display: none !important; }
+          .grid-table-panel button { min-height: 36px; }
+        }
+
+        /* ── SHORT VIEWPORTS: shave the hero before the board ── */
+        @media (max-height: 780px) and (min-width: 769px) {
+          .grid-pot-hero { font-size: 38px !important; }
+          .grid-pot-unit { font-size: 17px !important; }
+          .grid-timer-big { font-size: 26px !important; }
         }
 
         /* ── NARROW ≤480: keep tables inside the viewport, no page x-scroll ── */
@@ -1922,31 +1978,41 @@ const S = {
     background: "rgba(148,178,255,0.06)",
     color: "#C4D3F2", cursor: "pointer", letterSpacing: 0.5,
   },
-  main: { display: "flex", flex: 1, gap: 24, position: "relative", zIndex: 5, width: "100%", maxWidth: 1280, margin: "0 auto", padding: "0 24px", alignItems: "flex-start", justifyContent: "center" },
-  aside: { width: 320, flexShrink: 0, display: "flex", flexDirection: "column", gap: 14, padding: "20px 0" },
-
-  // ── Game column ──
-  gridArea: { width: "100%", maxWidth: 640, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", padding: "18px 0 10px", minHeight: 0, minWidth: 0 },
+  main: { display: "flex", flex: 1, position: "relative", zIndex: 5, width: "100%", padding: "0 24px", minHeight: 0, alignItems: "stretch", justifyContent: "center", overflowY: "auto", overflowX: "hidden" },
+  // ── One-screen stage: grid column left, bet column right ──
+  stage: { width: "100%", maxWidth: 1180, display: "flex", flexDirection: "column", minHeight: 0, padding: "12px 0 10px" },
+  cols: {
+    flex: 1, minHeight: 0, display: "grid",
+    // left column tracks the board width so the timer/stat rails line up with it
+    gridTemplateColumns: "minmax(0, min(100%, var(--gsize))) clamp(290px, 27%, 340px)",
+    gap: 22, alignItems: "stretch", justifyContent: "center",
+  },
+  colLeft: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8, minWidth: 0 },
+  colRight: { display: "flex", flexDirection: "column", alignItems: "center", gap: 8, minWidth: 0 },
+  // grow into spare height, but never shrink under the board — a squeezed
+  // wrapper would overlap the timer/stat rows instead of scrolling
+  gridWrap: { width: "100%", flex: "1 0 auto", display: "flex", alignItems: "center", justifyContent: "center" },
+  hero: { display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 },
   roundTag: { fontSize: 10, letterSpacing: 3, color: "#55688F", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" },
-  potLabel: { fontSize: 10, letterSpacing: 3, color: "#8FA3C9", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", margin: "12px 0 0" },
+  potLabel: { fontSize: 10, letterSpacing: 3, color: "#8FA3C9", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", margin: "6px 0 0" },
   potHero: {
-    fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 50, lineHeight: 1.15,
+    fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 46, lineHeight: 1.1,
     color: "#5FA6FF", textShadow: "0 0 28px rgba(62,139,255,0.45)", whiteSpace: "nowrap",
   },
-  potUnit: { fontSize: 22, fontWeight: 700, color: "#8FA3C9", textShadow: "none" },
+  potUnit: { fontSize: 20, fontWeight: 700, color: "#8FA3C9", textShadow: "none" },
   lastPill: {
     display: "inline-flex", alignItems: "center", gap: 5,
     fontSize: 9.5, letterSpacing: 1, color: "#8FA3C9",
     fontFamily: "'JetBrains Mono', monospace", fontWeight: 600,
     background: "rgba(148,178,255,0.06)", border: "1px solid rgba(148,178,255,0.12)",
-    borderRadius: 999, padding: "5px 12px", marginTop: 8,
+    borderRadius: 999, padding: "4px 12px", marginTop: 6,
   },
   revealChip: {
     display: "inline-flex", alignItems: "center", gap: 6,
     fontSize: 9.5, letterSpacing: 1.5, fontWeight: 700,
     fontFamily: "'JetBrains Mono', monospace", color: "#6FB0FF",
     background: "rgba(62,139,255,0.10)", border: "1px solid rgba(62,139,255,0.35)",
-    borderRadius: 999, padding: "5px 12px", marginTop: 8,
+    borderRadius: 999, padding: "4px 12px", marginTop: 6,
     animation: "pulse 1.4s ease-in-out infinite",
   },
   revealChipWin: {
@@ -1957,21 +2023,21 @@ const S = {
   },
   revealDot: { width: 6, height: 6, borderRadius: "50%", background: "#3E8BFF", flexShrink: 0, animation: "pulse 1s ease-in-out infinite" },
   timerPanel: {
-    width: "100%", marginTop: 14,
+    width: "100%", flexShrink: 0,
     background: "#0A1228", border: "1px solid rgba(148,178,255,0.08)",
-    borderRadius: 20, padding: "12px 16px 14px",
-    display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+    borderRadius: 18, padding: "8px 16px 10px",
+    display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
   },
   timerLabel: { fontSize: 9, letterSpacing: 3, color: "#55688F", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" },
-  timerBig: { fontFamily: "'Baloo 2', sans-serif", fontSize: 42, fontWeight: 800, lineHeight: 1.1, transition: "color 0.5s ease" },
+  timerBig: { fontFamily: "'Baloo 2', sans-serif", fontSize: 32, fontWeight: 800, lineHeight: 1.1, transition: "color 0.5s ease" },
   timerBarBg: { width: "100%", height: 4, borderRadius: 3, background: "rgba(148,178,255,0.08)", overflow: "hidden" },
   timerBarFill: { height: "100%", borderRadius: 3, transition: "background-color 0.4s ease" },
 
   // ── Keycap grid ──
   gridOuter: {
-    position: "relative", width: "100%", marginTop: 12,
+    position: "relative", width: "100%",
     background: "#0A1228", border: "1px solid rgba(148,178,255,0.08)",
-    borderRadius: 22, padding: 14,
+    borderRadius: 22, padding: 12,
   },
   grid: { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, width: "100%" },
   cell: {
@@ -2050,23 +2116,23 @@ const S = {
     zIndex: 2,
   },
   cellLabel: { position: "absolute", top: 7, left: 9, fontSize: 8, letterSpacing: 1, opacity: 0.45 },
-  statusBar: { display: "flex", justifyContent: "space-between", width: "100%", padding: "8px 4px", marginTop: 8, fontSize: 10, letterSpacing: 1.5, color: "#55688F" },
+  statusBar: { display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, width: "100%", padding: "2px 4px", fontSize: 10, letterSpacing: 1.5, color: "#55688F", flexShrink: 0, whiteSpace: "nowrap" },
 
   // ── 3-cell stat row ──
   statRow: {
     width: "100%", display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
     background: "#0A1228", border: "1px solid rgba(148,178,255,0.08)",
-    borderRadius: 16, padding: "12px 0", marginTop: 10,
+    borderRadius: 16, padding: "9px 0", flexShrink: 0,
   },
-  statCell: { display: "flex", flexDirection: "column", alignItems: "center", gap: 3, minWidth: 0, padding: "0 6px" },
-  statValueTop: { fontFamily: "'Baloo 2', sans-serif", fontSize: 18, fontWeight: 700, color: "#EAF1FF", lineHeight: 1.15, whiteSpace: "nowrap" },
+  statCell: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 0, padding: "0 6px" },
+  statValueTop: { fontFamily: "'Baloo 2', sans-serif", fontSize: 17, fontWeight: 700, color: "#EAF1FF", lineHeight: 1.15, whiteSpace: "nowrap" },
   statLabel: { fontSize: 8.5, letterSpacing: 1.5, color: "#55688F", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", whiteSpace: "nowrap" },
 
   // ── Bet panel ──
   betPanel: {
-    width: "100%", display: "flex", flexDirection: "column", gap: 12,
+    width: "100%", display: "flex", flexDirection: "column", gap: 10,
     background: "#0A1228", border: "1px solid rgba(148,178,255,0.08)",
-    borderRadius: 20, padding: 16, marginTop: 12,
+    borderRadius: 20, padding: 14, flexShrink: 0,
   },
   betHead: { display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 },
   betRows: { display: "flex", flexDirection: "column", gap: 6 },
@@ -2074,7 +2140,7 @@ const S = {
   betNote: { fontSize: 9.5, color: "#55688F", lineHeight: 1.5, fontFamily: "'Inter', sans-serif" },
   betCta: {
     fontFamily: "'Baloo 2', sans-serif", fontSize: 15, fontWeight: 700,
-    padding: "15px 16px", borderRadius: 999, border: "none",
+    padding: "13px 16px", borderRadius: 999, border: "none",
     background: "linear-gradient(180deg,#5FA6FF,#2E7BFF)",
     color: "#071230", cursor: "pointer", letterSpacing: 1, width: "100%",
     boxShadow: "0 8px 24px rgba(62,139,255,0.35)",
@@ -2088,7 +2154,7 @@ const S = {
   claimingDot: { width: 8, height: 8, borderRadius: "50%", background: "#3E8BFF", animation: "pulse 1s ease-in-out infinite" },
   errorBox: { padding: "10px 14px", borderRadius: 12, border: "1px solid rgba(255,107,94,0.3)", background: "rgba(255,107,94,0.08)", color: "#FF6B5E", fontSize: 11, cursor: "pointer", lineHeight: 1.4 },
   fairLink: {
-    display: "flex", alignItems: "center", gap: 6, marginTop: 14,
+    display: "flex", alignItems: "center", gap: 6, flexShrink: 0,
     fontSize: 10, letterSpacing: 2, fontWeight: 700,
     color: "#8FA3C9", textDecoration: "none",
     fontFamily: "'JetBrains Mono', monospace",
@@ -2149,8 +2215,68 @@ const S = {
     transition: "all 0.2s", textAlign: "center", width: "100%",
     boxShadow: "0 6px 18px rgba(62,139,255,0.3)",
   },
-  footer: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 20px", borderTop: "1px solid rgba(148,178,255,0.08)", background: "rgba(6,11,28,0.95)", zIndex: 10, position: "relative", gap: 8, flexWrap: "wrap" },
+  footer: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 16px", borderTop: "1px solid rgba(148,178,255,0.08)", background: "rgba(6,11,28,0.95)", zIndex: 10, position: "relative", gap: 8, flexWrap: "nowrap", flexShrink: 0 },
   gridOnline: { fontSize: 11, fontWeight: 700, color: "#3E8BFF", letterSpacing: 2, animation: "scanGlow 3s ease-in-out infinite", fontFamily: "'JetBrains Mono', monospace" },
+
+  // ── Panel dock + drawer (live feed / round history / your history) ──
+  dock: { display: "flex", alignItems: "center", gap: 6, flexShrink: 0, minWidth: 0 },
+  dockBtn: {
+    display: "inline-flex", alignItems: "center", gap: 5,
+    fontFamily: "'JetBrains Mono', monospace", fontSize: 9.5, fontWeight: 700,
+    letterSpacing: 1.2, color: "#8FA3C9", cursor: "pointer",
+    background: "rgba(148,178,255,0.06)", border: "1px solid rgba(148,178,255,0.12)",
+    borderRadius: 999, padding: "6px 12px", whiteSpace: "nowrap",
+  },
+  dockBtnOn: {
+    color: "#EAF1FF", background: "rgba(62,139,255,0.18)",
+    border: "1px solid rgba(62,139,255,0.5)",
+  },
+  dockLiveDot: {
+    width: 5, height: 5, borderRadius: "50%", background: "#3E8BFF",
+    boxShadow: "0 0 6px rgba(62,139,255,0.9)", animation: "pulse 1.6s ease-in-out infinite",
+  },
+  drawerScrim: {
+    position: "fixed", inset: 0, zIndex: 190,
+    background: "rgba(6,11,28,0.62)", backdropFilter: "blur(2px)",
+  },
+  drawer: {
+    // centered with auto margins, not a transform — the entry animation would
+    // otherwise clobber translateX and throw the panel off-screen
+    position: "fixed", zIndex: 200, left: 0, right: 0, bottom: 12,
+    margin: "0 auto",
+    width: "min(760px, calc(100vw - 28px))",
+    maxHeight: "min(72dvh, 560px)",
+    display: "flex", flexDirection: "column",
+    background: "#0A1228", border: "1px solid rgba(148,178,255,0.16)",
+    borderRadius: 20, overflow: "hidden",
+    boxShadow: "0 20px 60px rgba(0,0,0,0.65)",
+  },
+  drawerHead: {
+    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+    padding: "9px 10px 9px 10px", borderBottom: "1px solid rgba(148,178,255,0.1)",
+    background: "rgba(148,178,255,0.04)", flexShrink: 0,
+  },
+  drawerTabs: { display: "flex", alignItems: "center", gap: 5, minWidth: 0, overflowX: "auto" },
+  drawerTab: {
+    fontFamily: "'JetBrains Mono', monospace", fontSize: 9.5, fontWeight: 700,
+    letterSpacing: 1.2, color: "#8FA3C9", cursor: "pointer", whiteSpace: "nowrap",
+    background: "transparent", border: "1px solid rgba(148,178,255,0.12)",
+    borderRadius: 999, padding: "6px 12px",
+  },
+  drawerTabOn: {
+    color: "#EAF1FF", background: "rgba(62,139,255,0.18)",
+    border: "1px solid rgba(62,139,255,0.5)",
+  },
+  drawerClose: {
+    fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: "#8FA3C9",
+    cursor: "pointer", background: "none", border: "1px solid rgba(148,178,255,0.12)",
+    borderRadius: 999, padding: "4px 11px", flexShrink: 0,
+  },
+  drawerBody: { padding: 12, overflowY: "auto", minHeight: 0 },
+  drawerEmpty: {
+    padding: "26px 16px", textAlign: "center", color: "#55688F",
+    fontSize: 10.5, letterSpacing: 1.5, fontFamily: "'JetBrains Mono', monospace",
+  },
   dropdownItem: {
     display: "flex", alignItems: "center", gap: 10,
     padding: "12px 14px", fontFamily: "'JetBrains Mono', monospace",
