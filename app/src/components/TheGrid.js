@@ -191,6 +191,10 @@ const fmtEth = (v, d = 2) => {
 export default function TheGrid() {
   const { ready, authenticated, login, logout, user, exportWallet } = usePrivy();
   const { wallets } = useWallets();
+  const twitterPfp = (() => {
+    const url = user?.twitter?.profilePictureUrl;
+    return url ? url.replace("_normal", "_400x400") : null;
+  })();
   const { sendTransaction } = useSendTransaction();
 
   // Contract state
@@ -1662,11 +1666,25 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
                         <span style={{ fontSize: 18, fontWeight: 700, color: "#43537A" }}>✕</span>
                       ) : state === "yours" ? (
                         <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                          {twitterPfp && (
+                            <img src={twitterPfp} alt="" referrerPolicy="no-referrer"
+                              onError={(e) => { e.currentTarget.style.display = "none"; }}
+                              style={S.cellAvatarSm} />
+                          )}
                           <span style={S.cellYouTag}>${fmt(viewMyStakes[idx])}</span>
                           <span style={{ fontSize: 8, color: "#0A1E4A", fontWeight: 700 }}>of ${fmt(viewCellTotals[idx])}</span>
                         </span>
                       ) : count > 0 ? (
                         <span style={{ fontFamily: "'Baloo 2', sans-serif", fontSize: 13, fontWeight: 700, color: "#D7E3FF" }}>${fmt(viewCellTotals[idx])}</span>
+                      ) : isSelected && twitterPfp ? (
+                        // the player's own avatar marks the square they picked
+                        <img
+                          src={twitterPfp}
+                          alt=""
+                          referrerPolicy="no-referrer"
+                          onError={(e) => { e.currentTarget.style.display = "none"; }}
+                          style={S.cellAvatar}
+                        />
                       ) : (
                         <span style={{
                           ...S.cellDot,
@@ -2366,6 +2384,15 @@ const S = {
     transform: "scale(1.05)",
     boxShadow: "0 0 18px rgba(62,139,255,0.55)",
     zIndex: 2,
+  },
+  cellAvatar: {
+    width: "56%", maxWidth: 46, aspectRatio: "1", borderRadius: "50%",
+    objectFit: "cover", border: "2px solid rgba(255,255,255,0.85)",
+    boxShadow: "0 2px 10px rgba(0,0,0,0.45)",
+  },
+  cellAvatarSm: {
+    width: 20, height: 20, borderRadius: "50%", objectFit: "cover",
+    border: "1.5px solid rgba(7,18,48,0.55)",
   },
   cellLabel: { position: "absolute", top: 7, left: 9, fontSize: 8, letterSpacing: 1, opacity: 0.45 },
   statusBar: { display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, width: "100%", padding: "2px 4px", fontSize: 10, letterSpacing: 1.5, color: "#55688F", flexShrink: 0, whiteSpace: "nowrap", overflow: "hidden" },
