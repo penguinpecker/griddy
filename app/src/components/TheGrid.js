@@ -1519,6 +1519,12 @@ export default function TheGrid() {
             <span className="grid-tap-hint" style={{ color: "#55688F", fontSize: 9.5, letterSpacing: 0.8, flexShrink: 0 }}>TAP TO SELECT · DOUBLE-TAP TO ENTER</span>
           </div>
 
+        </div>
+
+        {/* ─── BET COLUMN — right of the grid on desktop/tablet,
+             stacked under it on mobile ─── */}
+        <div style={S.colRight} className="grid-bet-col">
+
           {/* Stat row — real data only */}
           <div style={S.statRow} className="grid-stat-row">
             <div style={S.statCell}>
@@ -1534,11 +1540,6 @@ export default function TheGrid() {
               <span style={S.statLabel}>YOU’RE IN</span>
             </div>
           </div>
-        </div>
-
-        {/* ─── BET COLUMN — right of the grid on desktop/tablet,
-             stacked under it on mobile ─── */}
-        <div style={S.colRight} className="grid-bet-col">
 
           {/* Your history — above the entry controls on desktop, reordered
                below them on phones so the CTA stays the first thing you reach */}
@@ -1759,7 +1760,7 @@ export default function TheGrid() {
           height: 100dvh !important;
           max-height: 100dvh !important;
           overflow: hidden !important;
-          --gsize: clamp(220px, calc(100dvh - 430px), 560px);
+          --gsize: clamp(220px, calc(100dvh - 356px), 660px);
         }
         .grid-outer-panel { width: min(100%, var(--gsize)) !important; }
         /* Right rail: the history table flexes into the leftover height and
@@ -1812,7 +1813,7 @@ export default function TheGrid() {
         @media (max-width: 768px) {
           /* Board is width-led on phones so every key stays a ≥44px tap target;
              the main column scrolls when the stack can't fit one screen. */
-          .grid-root { --gsize: clamp(320px, calc(100dvh - 420px), 520px); }
+          .grid-root { --gsize: clamp(320px, calc(100dvh - 396px), 560px); }
           /* Entry controls first, history after — the CTA stays reachable */
           .grid-hist-slot { order: 9 !important; flex: 0 0 auto !important; }
           .grid-hist-slot > .grid-table-panel { height: auto !important; }
@@ -2051,7 +2052,7 @@ const S = {
   },
   main: { display: "flex", flex: 1, position: "relative", zIndex: 5, width: "100%", padding: "0 24px", minHeight: 0, alignItems: "stretch", justifyContent: "center", overflowY: "auto", overflowX: "hidden" },
   // ── One-screen stage: grid column left, bet column right ──
-  stage: { width: "100%", maxWidth: 1120, display: "flex", flexDirection: "column", minHeight: 0, padding: "12px 0 10px" },
+  stage: { width: "100%", maxWidth: 1120, display: "flex", flexDirection: "column", minHeight: 0, padding: "8px 0 8px" },
   cols: {
     flex: 1, minHeight: 0, display: "grid",
     // left column tracks the board width so the timer/stat rails line up with it
@@ -2070,7 +2071,7 @@ const S = {
   roundTag: { fontSize: 10, letterSpacing: 3, color: "#55688F", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" },
   potLabel: { fontSize: 10, letterSpacing: 3, color: "#8FA3C9", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", margin: "2px 0 0" },
   potHero: {
-    fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 46, lineHeight: 1.1,
+    fontFamily: "'Baloo 2', sans-serif", fontWeight: 800, fontSize: 38, lineHeight: 1.1,
     color: "#5FA6FF", textShadow: "0 0 28px rgba(62,139,255,0.45)", whiteSpace: "nowrap",
   },
   potUnit: { fontSize: 20, fontWeight: 700, color: "#8FA3C9", textShadow: "none" },
@@ -2099,11 +2100,11 @@ const S = {
   timerPanel: {
     width: "100%", flexShrink: 0,
     background: "#0A1228", border: "1px solid rgba(148,178,255,0.08)",
-    borderRadius: 18, padding: "7px 16px 8px",
+    borderRadius: 18, padding: "5px 16px 6px",
     display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
   },
   timerLabel: { fontSize: 9, letterSpacing: 3, color: "#55688F", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" },
-  timerBig: { fontFamily: "'Baloo 2', sans-serif", fontSize: 32, fontWeight: 800, lineHeight: 1.1, transition: "color 0.5s ease" },
+  timerBig: { fontFamily: "'Baloo 2', sans-serif", fontSize: 27, fontWeight: 800, lineHeight: 1.1, transition: "color 0.5s ease" },
   timerBarBg: { width: "100%", height: 4, borderRadius: 3, background: "rgba(148,178,255,0.08)", overflow: "hidden" },
   timerBarFill: { height: "100%", borderRadius: 3, transition: "background-color 0.4s ease" },
 
@@ -2111,7 +2112,7 @@ const S = {
   gridOuter: {
     position: "relative", width: "100%",
     background: "#0A1228", border: "1px solid rgba(148,178,255,0.08)",
-    borderRadius: 22, padding: 12,
+    borderRadius: 22, padding: 10,
   },
   grid: { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, width: "100%" },
   cell: {
@@ -2199,10 +2200,10 @@ const S = {
   statRow: {
     width: "100%", display: "grid", gridTemplateColumns: "repeat(3, 1fr)",
     background: "#0A1228", border: "1px solid rgba(148,178,255,0.08)",
-    borderRadius: 16, padding: "9px 0", flexShrink: 0,
+    borderRadius: 16, padding: "7px 0", flexShrink: 0,
   },
   statCell: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 0, padding: "0 6px" },
-  statValueTop: { fontFamily: "'Baloo 2', sans-serif", fontSize: 17, fontWeight: 700, color: "#EAF1FF", lineHeight: 1.15, whiteSpace: "nowrap" },
+  statValueTop: { fontFamily: "'Baloo 2', sans-serif", fontSize: 16, fontWeight: 700, color: "#EAF1FF", lineHeight: 1.15, whiteSpace: "nowrap" },
   statLabel: { fontSize: 8.5, letterSpacing: 1.5, color: "#55688F", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", whiteSpace: "nowrap" },
 
   // ── Bet panel ──
