@@ -105,7 +105,7 @@ const RPC_HOST = (() => {
 // viewport (above the bet card on desktop, below it on phones).
 const DRAWER_TABS = [
   { id: "feed", label: "LIVE FEED" },
-  { id: "rounds", label: "ROUND HISTORY" },
+  { id: "you", label: "YOUR ROUNDS" },
 ];
 const MIN_STAKE_DEFAULT = 100000000000000000n; // $0.10 — fallback only; chain minStakeWei is the source of truth (keep in step with it: a low fallback lets users submit stakes that revert)
 const ROUND_DURATION = 60; // fallback window length — chain currentWindow() is the source of truth
@@ -263,6 +263,7 @@ export default function TheGrid() {
   const resolvedRef = useRef(false);
   const [winnerGlowing, setWinnerGlowing] = useState(false);
   const winnerGlowRound = useRef(0);
+  const seenUnresolved = useRef(new Set()); // rounds observed live BEFORE they resolved
   const hasStakesRef = useRef(false);
 
   // ─── Refresh top of history table (picks up TX hash + drand round after resolution) ───
@@ -939,7 +940,14 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
   // Light the winning square when a round resolves, then clear it so the next
   // round starts on a genuinely empty board.
   useEffect(() => {
+    // remember rounds we watched while they were still open
+    if (!resolved && round > 0) seenUnresolved.current.add(round);
+  }, [resolved, round]);
+
+  useEffect(() => {
     if (!resolved || winningCell < 0 || round <= 0) return;
+    // never light up a round that had already finished when we arrived
+    if (!seenUnresolved.current.has(round)) return;
     if (winnerGlowRound.current === round) return;
     winnerGlowRound.current = round;
     setWinnerGlowing(true);
@@ -1545,10 +1553,6 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
             <div style={S.revealChip} className="grid-reveal-chip">
               <span style={S.revealDot} />REVEALING R{round}
             </div>
-          ) : lastResult ? (
-            <div style={S.lastPill} className="grid-last-pill">
-              R{lastResult.roundId} · {CELL_LABELS[lastResult.cell] || "?"} took <span style={{ color: "#6FB0FF", fontWeight: 700 }}>${fmt(lastResult.pot)}</span>
-            </div>
           ) : null}
           </div>
 
@@ -1684,10 +1688,11 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
             </div>
           </div>
 
-          {/* Your history — above the entry controls on desktop, reordered
-               below them on phones so the CTA stays the first thing you reach */}
+          {/* Every resolved round from every player — above the entry controls
+               on desktop, reordered below them on phones so the CTA stays the
+               first thing you reach. Your own rounds live in the dock drawer. */}
           <div style={S.histSlot} className="grid-hist-slot">
-            {renderUserHistoryPanel()}
+            {renderRoundHistory()}
           </div>
 
           {/* Bet panel — all viewports */}
@@ -1788,7 +1793,6 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
           </div>
 
           {/* Provably fair link */}
-          <a href="/how-to-play" style={S.fairLink} className="grid-fair-link">🛡 PROVABLY FAIR ›</a>
 
           <div style={S.railHint} className="grid-rail-hint">RANDOMNESS BY DRAND — BEACON VERIFIED ON-CHAIN EVERY ROUND</div>
         </div>
@@ -1858,7 +1862,7 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
             </div>
             <div style={S.drawerBody} className="grid-user-history-scroll">
               {openPanel === "feed" && renderFeed()}
-              {openPanel === "rounds" && renderRoundHistory()}
+              {openPanel === "you" && renderUserHistoryPanel()}
             </div>
           </div>
         </>
@@ -2061,8 +2065,8 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
 function StakePicker({ value, onChange, minStake, stakeWei }) {
   const belowMin = stakeWei > 0n && stakeWei < minStake;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-      <div style={{ display: "flex", gap: 5 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+      <div style={{ display: "flex", gap: 6 }}>
         {STAKE_CHIPS.map((c) => {
           const active = String(value) === c;
           return (
@@ -2071,8 +2075,8 @@ function StakePicker({ value, onChange, minStake, stakeWei }) {
               className="stake-chip"
               onClick={() => onChange(c)}
               style={{
-                flex: 1, padding: "7px 2px", borderRadius: 999, cursor: "pointer",
-                fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700,
+                flex: 1, padding: "12px 2px", borderRadius: 999, cursor: "pointer",
+                fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 700,
                 background: active ? "rgba(62,139,255,0.22)" : "rgba(148,178,255,0.06)",
                 border: active ? "1px solid #3E8BFF" : "1px solid rgba(148,178,255,0.12)",
                 color: active ? "#EAF1FF" : "#8FA3C9",
@@ -2083,21 +2087,24 @@ function StakePicker({ value, onChange, minStake, stakeWei }) {
           );
         })}
       </div>
+      <div style={{ fontSize: 10, letterSpacing: 2, color: "#8FA3C9", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", marginTop: 2 }}>
+        ENTER AMOUNT TO PLAY
+      </div>
       <div style={{ position: "relative" }}>
         <input
           value={value}
           onChange={(e) => onChange(e.target.value.replace(/[^0-9.]/g, ""))}
           inputMode="decimal"
-          placeholder="custom amount"
+          placeholder="0.00"
           style={{
-            width: "100%", padding: "10px 44px 10px 14px", borderRadius: 12,
+            width: "100%", padding: "16px 66px 16px 18px", borderRadius: 14,
             background: "rgba(0,0,0,0.35)",
             border: `1px solid ${belowMin ? "rgba(255,107,94,0.5)" : "rgba(148,178,255,0.15)"}`,
-            color: "#EAF1FF", fontFamily: "'Baloo 2', sans-serif", fontSize: 16,
-            fontWeight: 700, outline: "none",
+            color: "#EAF1FF", fontFamily: "'Baloo 2', sans-serif", fontSize: 26,
+            fontWeight: 800, outline: "none",
           }}
         />
-        <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 11, color: "#55688F", pointerEvents: "none", fontFamily: "'JetBrains Mono', monospace" }}>USDC</span>
+        <span style={{ position: "absolute", right: 16, top: "50%", transform: "translateY(-50%)", fontSize: 13, fontWeight: 700, color: "#8FA3C9", pointerEvents: "none", fontFamily: "'JetBrains Mono', monospace" }}>USDC</span>
       </div>
       {belowMin && (
         <div style={{ fontSize: 9.5, color: "#FF6B5E" }}>minimum stake is ${Number(minStake) / 1e18}</div>
