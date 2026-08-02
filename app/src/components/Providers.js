@@ -27,7 +27,7 @@ export default function Providers({ children }) {
         },
         defaultChain: gameChain,
         supportedChains: [gameChain],
-        loginMethods: ["twitter", "google", "wallet"],
+        loginMethods: ["twitter", "wallet"],
       }}
     >
       {children}
