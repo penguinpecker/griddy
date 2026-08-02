@@ -82,39 +82,37 @@ export default function HowToPlay() {
           <div style={S.heroTag}>PICK A SQUARE. TAKE THE POT. ✦</div>
           <h1 className="htp-hero-title" style={S.heroTitle}>How to play</h1>
           <p style={S.heroDesc}>
-            Pick a cell. Stake USDC. A drand randomness beacon selects the winning cell.
-            If it's yours, you take the pot. 60-second rounds, fully on-chain.
+            Pick a cell. Stake USDC. When the round closes, a drand randomness beacon
+            determines the winning cell. If you staked on it, you receive your share of the prize.
           </p>
         </div>
 
         {/* Steps */}
         <div style={S.steps}>
-          <Step num="01" title="CONNECT & FUND">
-            Sign in with your email, social account, or connect an existing wallet.
-            You'll need <Hl>USDC on Arc</Hl> to play. Play any amount from <Hl>$0.10</Hl> per square.
+          <Step num="01" title="SIGN IN & FUND">
+            Sign in with your <Hl>X account</Hl> to get started. You'll need <Hl>USDC on Arc</Hl> to
+            play. Stake from <Hl>$0.10</Hl> on any cell.
           </Step>
 
           <Step num="02" title="PICK YOUR CELL">
-            The grid is a <Hl>5×5 board with 25 cells</Hl>. Each round lasts <Hl>60 seconds</Hl>.
-            Click any cell to select it, then confirm to lock your pick on-chain.
-            Multiple players can pick the same cell.
+            Choose any cell on the <Hl>5×5 grid</Hl> and enter your stake. You can stake on multiple
+            cells, and multiple players can stake on the same cell.
           </Step>
 
           <Step num="03" title="ROUND RESOLVES">
-            When the timer hits zero, the <Hl>drand beacon</Hl> pinned at round start is emitted
-            by the League of Entropy network. Its BLS signature — which didn't exist while betting
-            was open — is <Hl>verified by the contract itself</Hl> and picks the winning cell.
+            When the round closes, <Hl>drand</Hl> provides the randomness used to determine the
+            winning cell. The game contract <Hl>verifies the randomness on-chain</Hl> before
+            finalizing the result.
           </Step>
 
           <Step num="04" title="WINNERS GET PAID">
-            If you picked the winning cell, you <span style={{ color: "#6FB0FF", fontWeight: 600 }}>split the pot</span> with
-            anyone else who picked the same cell. Fewer players on your cell = bigger payout.
-            All payouts are instant and on-chain, split pro-rata to stake.
+            If you staked on the winning cell, you receive a share of the prize
+            <span style={{ color: "#6FB0FF", fontWeight: 600 }}> proportional to your stake</span> on
+            that cell. Payouts are automatic.
           </Step>
 
-          <Step num="05" title="NEXT ROUND STARTS">
-            A new round begins automatically. The grid resets, the timer restarts,
-            and you can pick again. Every round is independent — fresh odds, fresh grid, fresh chance.
+          <Step num="05" title="NEXT ROUND">
+            After the result is revealed and payouts settle, the grid resets for the next round.
           </Step>
         </div>
 
@@ -166,22 +164,22 @@ export default function HowToPlay() {
         {/* Info Cards */}
         <div className="htp-info-grid" style={S.infoGrid}>
           <InfoCard icon="⬡" title="PROVABLY FAIR">
-            Every round uses a <Hl>drand beacon</Hl> verified <Hl>on-chain</Hl> by the game contract.
-            The winning cell is determined by distributed randomness that nobody can predict or tamper with.
+            Every round uses <Hl>drand randomness</Hl> verified <Hl>on-chain</Hl> by the game
+            contract. The winning cell is determined using distributed randomness that cannot be
+            changed after betting closes.
           </InfoCard>
-          <InfoCard icon="◈" title="FULLY ON-CHAIN">
-            All bets, payouts, and round results are recorded on <Hl>Arc</Hl>.
-            No custodial risk. Your funds are in the smart contract until you win.
-            Verify everything on the Arc explorer.
+          <InfoCard icon="◈" title="ON-CHAIN SETTLEMENT">
+            Stakes, payouts, and round results are settled on <Hl>Arc</Hl> and can be verified on
+            the Arc explorer.
           </InfoCard>
           <InfoCard icon="●" title="PRO-RATA PAYOUTS">
-            A cell wins with probability equal to its <Hl>share of the pot</Hl>, and the prize splits
-            by stake: put in 25% of the winning cell, take 25% of the prize.
-            Every dollar has the same expected value wherever you place it.
+            <Hl>90% of the pot</Hl> goes to players on the winning cell. If multiple players staked
+            on it, the prize is split proportionally based on each player's stake. Put in 25% of the
+            stake on the winning cell and receive 25% of the prize.
           </InfoCard>
-          <InfoCard icon="↗" title="INSTANT PAYOUTS">
-            Winners receive USDC directly to their wallet within seconds of each round resolving.
-            No claiming, no delays — just on-chain settlement on Arc.
+          <InfoCard icon="↗" title="AUTOMATIC PAYOUTS">
+            When a round resolves, winners receive their USDC automatically. No manual claim is
+            required.
           </InfoCard>
         </div>
 
