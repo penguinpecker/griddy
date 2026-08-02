@@ -1977,8 +1977,7 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
 
         </div>
 
-        {/* ─── BET COLUMN — right of the grid on desktop/tablet,
-             stacked under it on mobile ─── */}
+        {/* ─── BET COLUMN — centred to the right of the board ─── */}
         <div style={S.colRight} className="grid-bet-col">
 
           {/* Stat row — real data only */}
@@ -1995,13 +1994,6 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
               <span style={S.statValueTop}>{myTotalStaked > 0n ? `$${fmt(myTotalStaked)}` : "—"}</span>
               <span style={S.statLabel}>YOU’RE IN</span>
             </div>
-          </div>
-
-          {/* Every resolved round from every player — above the entry controls
-               on desktop, reordered below them on phones so the CTA stays the
-               first thing you reach. Your own rounds live in the dock drawer. */}
-          <div style={S.histSlot} className="grid-hist-slot">
-            {renderRoundHistory()}
           </div>
 
           {/* Bet panel — all viewports */}
@@ -2106,6 +2098,11 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
           <div style={S.railHint} className="grid-rail-hint">RANDOMNESS BY DRAND — BEACON VERIFIED ON-CHAIN EVERY ROUND</div>
         </div>
 
+        {/* Every resolved round from every player — under the board on desktop,
+             last in the stack on phones so the play controls stay reachable */}
+        <div style={S.histBelow} className="grid-hist-below">
+          {renderRoundHistory()}
+        </div>
         </div>
         </div>
       </div>
@@ -2276,7 +2273,7 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
              the main column scrolls when the stack can't fit one screen. */
           .grid-root { --gsize: clamp(320px, calc(100dvh - 396px), 560px); }
           /* Entry controls first, history after — the CTA stays reachable */
-          .grid-hist-slot { order: 9 !important; flex: 0 0 auto !important; }
+          .grid-hist-below { order: 9 !important; }
           .grid-hist-slot > .grid-table-panel { height: auto !important; }
           .grid-hist-slot .grid-user-history-scroll { max-height: 240px !important; }
           .grid-header { position: sticky !important; top: 0 !important; height: 54px !important; }
@@ -2500,6 +2497,8 @@ function Row({ label, value, hl }) {
 // ═══════════════════════════════════════════════════════════════
 const S = {
   root: {
+    // history lives under the board now, so the page scrolls past one screen
+
     fontFamily: "'JetBrains Mono', monospace",
     background: "#060B1C",
     color: "#C4D3F2", minHeight: "100vh",
@@ -2560,9 +2559,11 @@ const S = {
     gap: 24, alignItems: "stretch", justifyContent: "center",
   },
   colLeft: { display: "flex", flexDirection: "column", alignItems: "center", gap: 6, minWidth: 0 },
-  colRight: { display: "flex", flexDirection: "column", alignItems: "stretch", gap: 9, minWidth: 0, minHeight: 0 },
+  colRight: {
+    justifyContent: "center", display: "flex", flexDirection: "column", alignItems: "stretch", gap: 9, minWidth: 0, minHeight: 0 },
   // YOUR HISTORY takes whatever height the bet card leaves over and scrolls
   // internally — the right rail then reaches the bottom of the stage
+  histBelow: { gridColumn: 1, width: "100%", minWidth: 0, flexShrink: 0 },
   histSlot: { width: "100%", flex: "1 1 auto", minHeight: 118, display: "flex", flexDirection: "column" },
   // grow into spare height, but never shrink under the board — a squeezed
   // wrapper would overlap the timer/stat rows instead of scrolling
