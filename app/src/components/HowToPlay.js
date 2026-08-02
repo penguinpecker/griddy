@@ -189,7 +189,7 @@ export default function HowToPlay() {
         <div style={S.ctaSection}>
           <a href="/" style={S.ctaBtn}>PICK A SQUARE ◎</a>
           <div style={S.ctaSub}>
-            ON-CHAIN · ARC TESTNET · RANDOMNESS BY DRAND
+            ON-CHAIN · ARC · RANDOMNESS BY DRAND
           </div>
         </div>
       </div>
@@ -200,7 +200,7 @@ export default function HowToPlay() {
           <GriddyMark size={16} />
           <span style={S.footerOnline}>GRIDDY ONLINE</span>
         </span>
-        <span style={{ fontSize: 11, color: "#55688F", letterSpacing: 1, fontFamily: "'JetBrains Mono', monospace" }}>ON-CHAIN · ARC TESTNET · RANDOMNESS BY DRAND</span>
+        <span style={{ fontSize: 11, color: "#55688F", letterSpacing: 1, fontFamily: "'JetBrains Mono', monospace" }}>ON-CHAIN · ARC · RANDOMNESS BY DRAND</span>
       </footer>
 
       <style>{`

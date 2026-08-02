@@ -10,7 +10,7 @@ import {
 
 // ═══════════════════════════════════════════════════════════════
 // GRIDDY CONTRACT ABI — drand-powered 5x5 grid game (Auto-Pay)
-// Chain: Arc Testnet (see lib/config.js — env-switchable)
+// Chain: Arc mainnet 5042 (see lib/config.js — env-switchable)
 // Stake asset: native USDC — Arc's gas token, 18 decimals on the chain-native
 // balance (variable amounts, pro-rata payouts)
 // Randomness: drand evmnet beacon, BLS-verified on-chain
@@ -107,7 +107,7 @@ const DRAWER_TABS = [
   { id: "feed", label: "LIVE FEED" },
   { id: "rounds", label: "ROUND HISTORY" },
 ];
-const MIN_STAKE_DEFAULT = 100000000000000n; // $0.0001 — fallback only; chain minStakeWei is the source of truth
+const MIN_STAKE_DEFAULT = 100000000000000000n; // $0.10 — fallback only; chain minStakeWei is the source of truth (keep in step with it: a low fallback lets users submit stakes that revert)
 const ROUND_DURATION = 60; // fallback window length — chain currentWindow() is the source of truth
 // How long the winning square keeps its glow after a round resolves. Without a
 // limit it sits lit on the NEXT round's empty board and reads as a square the
@@ -521,16 +521,40 @@ export default function TheGrid() {
   const historyOffset = useRef(0);
   const historyTotal = useRef(0);
 
+// Arc's RPC rejects eth_getLogs spans wider than 10,000 blocks with
+// {"code":-32614,"message":"eth_getLogs is limited to a 10,000 range"}. An
+// unbounded fromBlock:0 therefore failed on EVERY page load and left the
+// history panels permanently empty, with the error swallowed. Walk the range
+// in chunks, newest-first, and stop once we have enough.
+const LOG_CHUNK = 9_000n;
+async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopAfter = 0 }) {
+  const tip = await publicClient.getBlockNumber();
+  const floor = tip > sinceBlocks ? tip - sinceBlocks : 0n;
+  const out = [];
+  for (let to = tip; to >= floor; to = to - LOG_CHUNK - 1n) {
+    const from = to > floor + LOG_CHUNK ? to - LOG_CHUNK : floor;
+    try {
+      const batch = await publicClient.getContractEvents({
+        address: GRID_ADDR, abi: GRID_ABI, eventName, args, fromBlock: from, toBlock: to,
+      });
+      // chunks arrive newest-first; keep each chunk's own ascending order
+      out.unshift(...batch);
+    } catch (e) {
+      console.warn(`[logs] ${eventName} ${from}-${to} failed:`, e.shortMessage || e.message);
+    }
+    if (stopAfter && out.length >= stopAfter) break;
+    if (from === floor) break;
+  }
+  return out;
+}
+
   // Round history read straight from chain logs — trustless, and needs no
-  // database or credentials. The RPC serves the full range in one call.
+  // database or credentials. Read in chunks — see getEventsChunked.
   const chainHistory = useRef(null);
 
   const loadChainHistory = async () => {
     if (chainHistory.current) return chainHistory.current;
-    const logs = await publicClient.getContractEvents({
-      address: GRID_ADDR, abi: GRID_ABI, eventName: "RoundResolved",
-      fromBlock: 0n, toBlock: "latest",
-    });
+    const logs = await getEventsChunked({ eventName: "RoundResolved", stopAfter: 60 });
     const rows = await Promise.all(
       logs.slice().reverse().map(async (l) => {
         let pot = 0n, drandRound = null;
@@ -609,14 +633,8 @@ export default function TheGrid() {
     if (!address) return [];
     try {
       const [mine, paid] = await Promise.all([
-        publicClient.getContractEvents({
-          address: GRID_ADDR, abi: GRID_ABI, eventName: "Staked",
-          args: { player: address }, fromBlock: 0n, toBlock: "latest",
-        }),
-        publicClient.getContractEvents({
-          address: GRID_ADDR, abi: GRID_ABI, eventName: "WinningsPaid",
-          args: { player: address }, fromBlock: 0n, toBlock: "latest",
-        }),
+        getEventsChunked({ eventName: "Staked", args: { player: address } }),
+        getEventsChunked({ eventName: "WinningsPaid", args: { player: address } }),
       ]);
       // exact USDC received per round, straight from the payout event
       const payouts = new Map();
@@ -779,21 +797,49 @@ export default function TheGrid() {
     if (!wallet || claiming || round === 0 || roundEnd === 0) return;
     setClaiming(true);
     setError(null);
-    // V5: rounds never roll forward on their own. A live round takes stakes at
-    // its own id; once ended, the next stake must target round+1 (the contract
-    // lazily opens it, then checks the id)
-    const liveNow = Date.now() / 1000 < roundEnd;
-    const targetRoundId = liveNow ? round : round + 1;
+    // Rounds never roll forward on their own: a live round takes stakes at its
+    // own id, and once it has ended the next stake must target round+1 (the
+    // contract lazily opens it, then checks the id).
+    //
+    // Deriving that from the BROWSER clock loses the race at a boundary — the
+    // chain re-decides from block.timestamp, so a click a second either side
+    // reverts "Wrong round" and the player's money never lands. Ask the chain
+    // what round it is, and retry once if it moves under us.
+    const resolveTarget = async () => {
+      try {
+        const [curId, blk] = await Promise.all([
+          publicClient.readContract({ address: GRID_ADDR, abi: GRID_ABI, functionName: "currentRoundId" }),
+          publicClient.getBlock(),
+        ]);
+        const rd = await publicClient.readContract({
+          address: GRID_ADDR, abi: GRID_ABI, functionName: "rounds", args: [curId],
+        });
+        const ended = BigInt(blk.timestamp) >= BigInt(rd[1]);
+        return Number(curId) + (ended ? 1 : 0);
+      } catch {
+        return Date.now() / 1000 < roundEnd ? round : round + 1; // last-resort
+      }
+    };
+    let targetRoundId = await resolveTarget();
     try {
-      const data = encodeFunctionData({
-        abi: GRID_ABI,
-        functionName: "stake",
-        args: [BigInt(targetRoundId), [cellIndex], [amountWei]],
-      });
-      const receipt = await sendTransaction(
-        { to: GRID_ADDR, data, value: amountWei, chainId: CHAIN_ID, maxPriorityFeePerGas: TX_TIP, maxFeePerGas: TX_MAX_FEE },
+      const send = (id) => sendTransaction(
+        {
+          to: GRID_ADDR,
+          data: encodeFunctionData({ abi: GRID_ABI, functionName: "stake", args: [BigInt(id), [cellIndex], [amountWei]] }),
+          value: amountWei, chainId: CHAIN_ID, maxPriorityFeePerGas: TX_TIP, maxFeePerGas: TX_MAX_FEE,
+        },
         { sponsor: GAS_SPONSOR }
       );
+      let receipt;
+      try {
+        receipt = await send(targetRoundId);
+      } catch (e) {
+        const m = e.shortMessage || e.message || "";
+        if (!/Wrong round/i.test(m)) throw e;
+        targetRoundId = await resolveTarget(); // boundary moved — take the new one
+        addFeed(`◈ Round rolled — retrying on round ${targetRoundId}`);
+        receipt = await send(targetRoundId);
+      }
       addFeed(`◈ Staking $${fmt(amountWei)} on ${CELL_LABELS[cellIndex]}...`);
       await publicClient.waitForTransactionReceipt({
         hash: receipt.hash,

@@ -154,7 +154,7 @@ export default function HomePage() {
         <span style={{position:"absolute", top:16, right:20, fontFamily:MONO, fontSize:18, color:"rgba(148,178,255,0.22)"}}>+</span>
 
         <div style={{marginBottom:40, textAlign:"center", display:"flex", flexDirection:"column", alignItems:"center"}}>
-          <div style={{fontFamily:MONO, fontSize:10, letterSpacing:2, fontWeight:600, color:MUTED, background:"rgba(148,178,255,0.06)", border:"1px solid rgba(148,178,255,0.12)", borderRadius:999, padding:"6px 14px", marginBottom:26}}>⬡ CRYPTO-NATIVE · ON ARC TESTNET</div>
+          <div style={{fontFamily:MONO, fontSize:10, letterSpacing:2, fontWeight:600, color:MUTED, background:"rgba(148,178,255,0.06)", border:"1px solid rgba(148,178,255,0.12)", borderRadius:999, padding:"6px 14px", marginBottom:26}}>⬡ CRYPTO-NATIVE · ON ARC</div>
           <div style={{display:"flex", alignItems:"center", justifyContent:"center", gap:"clamp(12px,3vw,22px)", flexWrap:"wrap", marginBottom:14}}>
             <GriddyMark size={72}/>
             <span style={{fontFamily:BALOO, fontWeight:800, fontSize:"clamp(56px,11vw,96px)", color:"#F4F7FF", letterSpacing:0.5, lineHeight:1}}>griddy</span>
