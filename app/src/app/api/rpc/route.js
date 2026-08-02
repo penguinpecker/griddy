@@ -9,14 +9,21 @@
 export const dynamic = "force-dynamic";
 
 const UPSTREAM =
-  process.env.ARC_RPC_URL || "https://arc-mainnet.g.alchemy.com/v2/alch-demo";
+  process.env.ARC_RPC_URL || "https://rpc.labsapis.com/mainnet/arc";
+// Some Arc gateways only answer requests carrying a specific Origin. Set
+// ARC_RPC_ORIGIN when the upstream requires one; unset it for endpoints
+// (e.g. a private provider key) that don't care.
+const UPSTREAM_ORIGIN = process.env.ARC_RPC_ORIGIN || "";
 
 export async function POST(request) {
   const body = await request.text();
   try {
     const upstream = await fetch(UPSTREAM, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...(UPSTREAM_ORIGIN ? { origin: UPSTREAM_ORIGIN } : {}),
+      },
       body,
       cache: "no-store",
     });

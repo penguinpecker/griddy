@@ -13,9 +13,10 @@ const MAINNET_KEY = process.env.MAINNET_PRIVATE_KEY || process.env.PRIVATE_KEY;
 const ROBINHOOD_RPC = process.env.ROBINHOOD_RPC || "https://rpc.mainnet.chain.robinhood.com";
 const ROBINHOOD_TESTNET_RPC = process.env.ROBINHOOD_TESTNET_RPC || "https://rpc.testnet.chain.robinhood.com";
 const ARC_TESTNET_RPC = process.env.ARC_TESTNET_RPC || "https://rpc.testnet.arc.network";
-// Arc mainnet (chainId 5042). The public "alch-demo" key is rate-limited and
-// shared — set ARC_MAINNET_RPC to your own endpoint before any real deploy.
-const ARC_MAINNET_RPC = process.env.ARC_MAINNET_RPC || "https://arc-mainnet.g.alchemy.com/v2/alch-demo";
+// Arc mainnet (chainId 5042). Some gateways only answer requests carrying a
+// specific Origin — set ARC_MAINNET_RPC_ORIGIN when the upstream requires one.
+const ARC_MAINNET_RPC = process.env.ARC_MAINNET_RPC || "https://rpc.labsapis.com/mainnet/arc";
+const ARC_MAINNET_RPC_ORIGIN = process.env.ARC_MAINNET_RPC_ORIGIN || "https://portalbridge.com";
 
 const config: HardhatUserConfig = {
   paths: {
@@ -57,6 +58,7 @@ const config: HardhatUserConfig = {
       url: ARC_MAINNET_RPC,
       accounts: acct(MAINNET_KEY),
       chainId: 5042,
+      ...(ARC_MAINNET_RPC_ORIGIN ? { httpHeaders: { origin: ARC_MAINNET_RPC_ORIGIN } } : {}),
     },
     hardhat: {
       chainId: 31337,

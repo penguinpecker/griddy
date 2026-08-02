@@ -16,6 +16,7 @@
  *   PRIVATE_KEY        keeper wallet (needs dust native USDC for gas)
  *   GRIDDY_ADDRESS      deployed Griddy contract
  *   RPC_URL            comma-separated fallback list (Arc mainnet default)
+ *   RPC_ORIGIN         Origin header some Arc gateways require
  *   CHAIN_ID           default 5042 (Arc mainnet); 5042002 = testnet
  *   SEQUENCER_RPC      optional write-only endpoint (lower latency, FCFS)
  *   PORT               SSE port, default 8787
@@ -37,7 +38,7 @@ import { privateKeyToAccount } from "viem/accounts";
 // cloud egress IPs (Railway) hard, so lean on public gateways first.
 const RPC_URLS = (
   process.env.RPC_URLS || process.env.RPC_URL ||
-  "https://5042.rpc.thirdweb.com,https://arc-mainnet.g.alchemy.com/v2/alch-demo"
+  "https://rpc.labsapis.com/mainnet/arc"
 ).split(",").map((s) => s.trim()).filter(Boolean);
 const RPC_URL = RPC_URLS[0];
 const SEQUENCER_RPC = process.env.SEQUENCER_RPC || RPC_URL;
@@ -85,7 +86,17 @@ const ABI = parseAbi([
 ]);
 
 const account = privateKeyToAccount(process.env.PRIVATE_KEY);
-const rpcTransport = fallback(RPC_URLS.map((u) => viemHttp(u, { timeout: 8000 })));
+// Some Arc gateways only answer requests carrying a specific Origin; set
+// RPC_ORIGIN when the upstream requires one (harmless otherwise).
+const RPC_ORIGIN = process.env.RPC_ORIGIN || "";
+const rpcTransport = fallback(
+  RPC_URLS.map((u) =>
+    viemHttp(u, {
+      timeout: 8000,
+      ...(RPC_ORIGIN ? { fetchOptions: { headers: { origin: RPC_ORIGIN } } } : {}),
+    })
+  )
+);
 const publicClient = createPublicClient({
   chain: gameChain,
   transport: rpcTransport,
