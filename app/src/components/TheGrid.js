@@ -60,6 +60,11 @@ const GRID_ABI = [
       { name: "drandRound", type: "uint64" },
       { name: "secondsLeft", type: "uint256" },
     ] },
+  // V10: dead seconds between one round's betting close and the next one's
+  // open, reserved for resolution + the winner reveal. Absent pre-V10 (read
+  // reverts), which reads as gap 0 — i.e. the old back-to-back behaviour.
+  { name: "revealGap", type: "function", stateMutability: "view",
+    inputs: [], outputs: [{ name: "", type: "uint256" }] },
   { name: "minStakeWei", type: "function", stateMutability: "view",
     inputs: [], outputs: [{ name: "", type: "uint256" }] },
   { name: "protocolFeeBps", type: "function", stateMutability: "view",
@@ -124,14 +129,26 @@ const REVEAL_MS = 3000;
  * exactly (whole seconds, same roll-forward rule), so the clock keeps ticking
  * — and rolls over — between polls even when nothing is on-chain to poll.
  */
-const bettableWindowEnd = (nowSec, anchor, dur) => {
-  if (!(dur > 0)) return 0;
+const bettableWindowAt = (nowSec, anchor, dur, gap = 0) => {
+  if (!(dur > 0)) return null;
+  const cyc = dur + gap;
   const t = Math.floor(nowSec); // the contract only ever sees whole seconds
-  // `anchor` is a boundary of the same grid, so stepping either way from it
-  // lands on the true window: it sits ahead of `t` when the last read had
-  // already rolled forward, behind it after an idle stretch.
-  const wEnd = anchor + (Math.floor((t - anchor) / dur) + 1) * dur;
-  return wEnd - t < MIN_BET_WINDOW ? wEnd + dur : wEnd;
+  // `anchor` is a CYCLE boundary of the same grid (currentWindow's windowStart
+  // always is), so stepping either way from it lands on the true cycle: ahead
+  // of `t` when the last read had already rolled forward, behind it after an
+  // idle stretch.
+  const cStart = anchor + Math.floor((t - anchor) / cyc) * cyc;
+  const betEnd = cStart + dur;
+  const cEnd = cStart + cyc;
+  if (t < betEnd && betEnd - t >= MIN_BET_WINDOW) return { start: cStart, end: betEnd };
+  // Betting for this cycle is shut — either it ran out or we are inside the
+  // reveal intermission. `start` is then in the FUTURE: that is the moment the
+  // next round's clock actually begins.
+  return { start: cEnd, end: cEnd + dur };
+};
+const bettableWindowEnd = (nowSec, anchor, dur, gap = 0) => {
+  const w = bettableWindowAt(nowSec, anchor, dur, gap);
+  return w ? w.end : 0;
 };
 const GRID_SIZE = 5;
 const TOTAL_CELLS = GRID_SIZE * GRID_SIZE;
@@ -274,6 +291,9 @@ export default function TheGrid() {
   const gridWindow = useRef(null); // { anchor, dur } — a known grid boundary + window length
   const [windowSpan, setWindowSpan] = useState(0);
   const [smoothWindowTime, setSmoothWindowTime] = useState(0);
+  // Seconds until betting OPENS. Non-zero only during the V10 reveal
+  // intermission, where the next round exists on the grid but has not started.
+  const [windowOpensIn, setWindowOpensIn] = useState(0);
   const [selectedCell, setSelectedCell] = useState(null);
   // Measured keycap width — the avatar stack is sized off the real tile so it
   // packs the same on a 660px board and a 320px phone
@@ -302,6 +322,7 @@ export default function TheGrid() {
   const walletDropdownRef = useRef(null);
   const [lastResult, setLastResult] = useState(null); // { roundId, cell, players, pot, txHash }
   const feeConfig = useRef({ feeBps: 1000n, resolverTipWei: 30000000000000n, minStakeWei: MIN_STAKE_DEFAULT }); // defaults, updated from chain
+  const revealGapRef = useRef(0); // V10 intermission length, 0 pre-V10
   const [roundHistory, setRoundHistory] = useState([]); // array of ALL loaded past results, newest first
   const [moneyFlow, setMoneyFlow] = useState(false);
   const [gridFlash, setGridFlash] = useState(false);
@@ -379,8 +400,12 @@ export default function TheGrid() {
       publicClient.readContract({ address: GRID_ADDR, abi: GRID_ABI, functionName: "protocolFeeBps" }).catch(() => 1000n),
       publicClient.readContract({ address: GRID_ADDR, abi: GRID_ABI, functionName: "resolverTipWei" }).catch(() => 30000000000000n),
       publicClient.readContract({ address: GRID_ADDR, abi: GRID_ABI, functionName: "minStakeWei" }).catch(() => MIN_STAKE_DEFAULT),
-    ]).then(([bps, tip, minS]) => {
+      // reverts pre-V10 -> 0, i.e. no intermission, the old back-to-back grid
+      publicClient.readContract({ address: GRID_ADDR, abi: GRID_ABI, functionName: "revealGap" }).catch(() => 0n),
+    ]).then(([bps, tip, minS, gap]) => {
       feeConfig.current = { feeBps: BigInt(bps), resolverTipWei: BigInt(tip), minStakeWei: BigInt(minS) };
+      revealGapRef.current = Number(gap);
+      if (gridWindow.current) gridWindow.current.gap = Number(gap);
     });
   }, []);
 
@@ -439,7 +464,13 @@ export default function TheGrid() {
       }
       const g = gridWindow.current;
       if (g) {
-        setSmoothWindowTime(Math.max(0, bettableWindowEnd(nowSec, g.anchor, g.dur) - nowSec));
+        const w = bettableWindowAt(nowSec, g.anchor, g.dur, g.gap);
+        if (w) {
+          setSmoothWindowTime(Math.max(0, w.end - nowSec));
+          // > 0 only inside the reveal intermission — the seconds until the
+          // next round's clock starts, which is what the panel shows there.
+          setWindowOpensIn(Math.max(0, w.start - nowSec));
+        }
       }
       animFrame.current = requestAnimationFrame(tick);
     };
@@ -534,7 +565,9 @@ export default function TheGrid() {
         const wEnd = Number(win[1]);
         const dur = wEnd - wStart;
         if (dur > 0) {
-          gridWindow.current = { anchor: wStart, dur };
+          // gap is read separately (config poll); default 0 keeps pre-V10
+          // chains on the old back-to-back cycle.
+          gridWindow.current = { anchor: wStart, dur, gap: revealGapRef.current };
           setWindowSpan((prev) => (prev === dur ? prev : dur));
         }
       }
@@ -1159,10 +1192,10 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
         const nowSec = Math.floor(Date.now() / 1000);
         const g = gridWindow.current;
         const dur = g?.dur || ROUND_DURATION;
-        const predictedEnd = g ? bettableWindowEnd(nowSec, g.anchor, g.dur) : nowSec + dur;
+        const w = g ? bettableWindowAt(nowSec, g.anchor, g.dur, g.gap) : null;
         setRound(targetRoundId);
-        setRoundStart(predictedEnd - dur);
-        setRoundEnd(predictedEnd);
+        setRoundStart(w ? w.start : nowSec);
+        setRoundEnd(w ? w.end : nowSec + dur);
       }
       pollState();
       // Your avatar joins the square straight away — the 60ms defer lets the
@@ -1288,6 +1321,12 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
   // is the chain's), it is simply not the thing being displayed for those 3s,
   // and it reappears at its true remaining value rather than a fresh 60.
   const showWindowClock = windowSpan > 0 && isNextRoundView;
+  // V10: betting is shut for these seconds while the round resolves and its
+  // winner is shown. The next round's clock has NOT started — so the panel
+  // counts down to the open, and the round clock afterwards begins at a full
+  // roundDuration instead of already part-spent.
+  const inIntermission = windowSpan > 0 && windowOpensIn > 0;
+  const opensInText = `${String(Math.floor(Math.max(0, windowOpensIn) / 60)).padStart(2, "0")}:${String(Math.floor(Math.max(0, windowOpensIn)) % 60).padStart(2, "0")}`;
   const countdown = showWindowClock ? smoothWindowTime : smoothTime;
   const countdownSpan = showWindowClock ? windowSpan : actualDuration;
   // Bar empties for the result hold — the round it belonged to is over.
@@ -1298,8 +1337,11 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
   const getStatus = () => {
     if (roundState === "init") return "INITIALIZING...";
     if (revealActive) return `ROUND ${round} — ${CELL_LABELS[winningCell]} WINS`;
-    // V9: the clock is a pure function of the grid, so betting is open in every
-    // state except init — no wording here may suggest a player starts it.
+    // V10: betting really is shut during the intermission — a stake sent now
+    // buys into the round that opens next, so say so rather than "open".
+    if (inIntermission) return `ROUND ${displayRound} — OPENS IN ${Math.ceil(windowOpensIn)}S`;
+    // The clock is a pure function of the grid, so betting is open in every
+    // other state except init — no wording may suggest a player starts it.
     if (showWindowClock) return `ROUND ${displayRound} — BETTING OPEN`;
     if (roundState === "revealing") return `ROUND ${displayRound} — BETTING OPEN`;
     if (roundState === "idle") return `ROUND ${displayRound} — BETTING OPEN`;
@@ -1874,12 +1916,14 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
             <div style={S.timerLabel}>
               {roundState === "init" ? "INITIALIZING"
                 : revealActive ? `ROUND ${round} RESULT`
+                : inIntermission ? "NEXT ROUND OPENS IN"
                 : showWindowClock ? "NEXT ROUND CLOSES"
                 : isNextRoundView ? "BETTING OPEN"
                 : "PICK A SQUARE"}
             </div>
             <div style={{ ...S.timerBig, color: timerColor }} className="grid-timer-big">
               {revealActive ? CELL_LABELS[winningCell]
+                : inIntermission ? opensInText
                 : isNextRoundView && !showWindowClock ? "READY"
                 : timerDisplay}
             </div>
