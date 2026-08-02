@@ -27,13 +27,32 @@ create table if not exists griddy_stakes (
   primary key (round_id, player_address, cell)
 );
 
+-- Public profile card for a wallet: the grid draws each staker's avatar on the
+-- square they entered, and Privy only ever exposes profile data for the user
+-- who is signed in. So every player publishes their OWN row once per login
+-- (app/src/app/api/profile/route.js, service key, identity taken from the
+-- verified Privy token — never from the request body) and the board reads the
+-- whole address -> avatar map back with the anon key.
+create table if not exists griddy_players (
+  address          text primary key,             -- lowercase 0x address
+  twitter_username text,
+  pfp_url          text,
+  updated_at       timestamptz not null default now()
+);
+
 create index if not exists griddy_stakes_player_idx on griddy_stakes (player_address, round_id desc);
 create index if not exists griddy_rounds_resolved_idx on griddy_rounds (round_id desc);
 
 alter table griddy_rounds enable row level security;
 alter table griddy_stakes enable row level security;
+alter table griddy_players enable row level security;
 
 -- Public read (site uses the publishable key); writes require the service
 -- role, held only by the keeper. Verified: anon SELECT 200, anon INSERT 401.
+drop policy if exists "griddy_rounds public read" on griddy_rounds;
 create policy "griddy_rounds public read" on griddy_rounds for select using (true);
+drop policy if exists "griddy_stakes public read" on griddy_stakes;
 create policy "griddy_stakes public read" on griddy_stakes for select using (true);
+-- Avatars are public by design; the route holds the only write credential.
+drop policy if exists "griddy_players public read" on griddy_players;
+create policy "griddy_players public read" on griddy_players for select using (true);

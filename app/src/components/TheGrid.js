@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
-import { usePrivy, useWallets, useSendTransaction } from "@privy-io/react-auth";
+import { usePrivy, useWallets, useSendTransaction, useIdentityToken } from "@privy-io/react-auth";
 import { useResolverSSE } from "./useResolverSSE";
 import { createPublicClient, http, fallback, parseEther, encodeFunctionData } from "viem";
 import {
@@ -136,7 +136,42 @@ const TOTAL_CELLS = GRID_SIZE * GRID_SIZE;
 const EMPTY_COUNTS = new Array(TOTAL_CELLS).fill(0);
 const EMPTY_TOTALS = new Array(TOTAL_CELLS).fill(0n);
 const EMPTY_SET = new Set();
+// Per-cell staker lists. Frozen: this instance is handed straight to the view
+// while the next round's board is shown, so nothing may ever push into it.
+const EMPTY_PLAYERS = Object.freeze(Array.from({ length: TOTAL_CELLS }, () => Object.freeze([])));
+const freshPlayers = () => Array.from({ length: TOTAL_CELLS }, () => []);
 const dbHeaders = { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` };
+
+// ─── Avatar stack (who is standing on each square) ───
+// A round lasts one window, so its Staked logs always sit inside the newest
+// block chunk — one getLogs call, not a walk back through history.
+const ROUND_LOG_SPAN = 9_000n;
+const AV_GAP = 2; // px between packed avatars
+// Fallback mark for a wallet that has never published a profile: the same
+// address always reads as the same colour, so people stay recognisable.
+const avatarHue = (addr) => {
+  let h = 0;
+  for (let i = 2; i < addr.length; i++) h = (h * 31 + addr.charCodeAt(i)) % 360;
+  return h;
+};
+/**
+ * Avatar geometry for a tile `t` px wide. Everything is derived from the tile
+ * so a busy square packs tighter instead of spilling over the keycap: the area
+ * starts below the A1 label and the staker-count badge, fits whole avatars
+ * across (capped at 30px, the old centred size), and only ever claims as many
+ * slots as actually fit — the caller shows "+N" for the rest.
+ */
+const avatarBox = (t) => {
+  if (!t || t <= 0) return { padX: 5, padTop: 20, size: 18, slots: 6, font: 8 };
+  const padX = Math.max(4, Math.round(t * 0.06));
+  const padTop = Math.max(20, Math.round(t * 0.24)); // clears label + count chip
+  const areaW = Math.max(1, t - padX * 2);
+  const areaH = Math.max(1, t - padTop - padX);
+  const size = Math.max(9, Math.min(30, Math.floor((areaW - AV_GAP * 2) / 3)));
+  const cols = Math.max(1, Math.floor((areaW + AV_GAP) / (size + AV_GAP)));
+  const rows = Math.max(1, Math.floor((areaH + AV_GAP) / (size + AV_GAP)));
+  return { padX, padTop, size, slots: Math.max(1, cols * rows), font: Math.max(6, Math.round(size * 0.44)) };
+};
 
 const CELL_LABELS = [];
 for (let r = 0; r < GRID_SIZE; r++)
@@ -189,8 +224,9 @@ const fmtEth = (v, d = 2) => {
 // COMPONENT
 // ═══════════════════════════════════════════════════════════════
 export default function TheGrid() {
-  const { ready, authenticated, login, logout, user, exportWallet } = usePrivy();
+  const { ready, authenticated, login, logout, user, exportWallet, getAccessToken } = usePrivy();
   const { wallets } = useWallets();
+  const { identityToken } = useIdentityToken();
   const twitterPfp = (() => {
     const url = user?.twitter?.profilePictureUrl;
     return url ? url.replace("_normal", "_400x400") : null;
@@ -209,6 +245,12 @@ export default function TheGrid() {
   const [cellCounts, setCellCounts] = useState(new Array(TOTAL_CELLS).fill(0));
   const [cellTotals, setCellTotals] = useState(new Array(TOTAL_CELLS).fill(0n));
   const [myStakes, setMyStakes] = useState(new Array(TOTAL_CELLS).fill(0n));
+  // Who is on each square this round (lowercase addresses, entry order) and
+  // the address -> profile map the avatars are drawn from
+  const [cellPlayers, setCellPlayers] = useState(freshPlayers);
+  const [profiles, setProfiles] = useState({});
+  const cellPlayersRound = useRef(0);
+  const profilesAsked = useRef(new Set());
   const [stakeAmount, setStakeAmount] = useState("1");
   const [unclaimed, setUnclaimed] = useState(0n);
   const [ethBalance, setEthBalance] = useState("0");
@@ -223,6 +265,10 @@ export default function TheGrid() {
   const [windowSpan, setWindowSpan] = useState(0);
   const [smoothWindowTime, setSmoothWindowTime] = useState(0);
   const [selectedCell, setSelectedCell] = useState(null);
+  // Measured keycap width — the avatar stack is sized off the real tile so it
+  // packs the same on a 660px board and a 320px phone
+  const gridRef = useRef(null);
+  const [tilePx, setTilePx] = useState(0);
   const lastTapRef = useRef({ cell: -1, time: 0 });
   const [hoveredCell, setHoveredCell] = useState(-1);
   const [claiming, setClaiming] = useState(false);
@@ -276,6 +322,22 @@ export default function TheGrid() {
     });
   };
 
+  // ─── Avatar stack: note a player on a square (live SSE + own stakes) ───
+  // Entry order is the pack order, so a late arrival lands at the end of the
+  // stack. Ignores anything for a round the board has already left behind.
+  const notePlayerOnCell = useCallback((roundId, cell, who) => {
+    const c = Number(cell);
+    if (!who || !Number.isInteger(c) || c < 0 || c >= TOTAL_CELLS) return;
+    if (Number(roundId) !== cellPlayersRound.current) return;
+    const w = String(who).toLowerCase();
+    setCellPlayers((prev) => {
+      if (prev[c]?.includes(w)) return prev;
+      const next = prev.slice();
+      next[c] = [...(next[c] || []), w];
+      return next;
+    });
+  }, []);
+
   // ─── SSE: Real-time events from keeper ───
   const { connected: sseConnected } = useResolverSSE({
     url: SSE_URL,
@@ -293,6 +355,7 @@ export default function TheGrid() {
         return next;
       });
       setClaimedCells(prev => new Set([...prev, data.cell]));
+      notePlayerOnCell(data.roundId, data.cell, data.player);
     },
   });
 
@@ -374,6 +437,24 @@ export default function TheGrid() {
   useEffect(() => {
     const iv = setInterval(() => setScanLine((p) => (p + 1) % 100), 40);
     return () => clearInterval(iv);
+  }, []);
+
+  // ─── Measure one keycap so the avatar stack can be sized in real pixels ───
+  // (the board is fluid — clamped against the leftover viewport height — so a
+  // fixed avatar size would overflow the tile on small screens)
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => {
+      const tile = el.firstElementChild;
+      if (!tile) return;
+      const w = tile.getBoundingClientRect().width;
+      setTilePx((prev) => (Math.abs(prev - w) < 0.5 ? prev : w));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
 
   // ─── Poll Contract (uses OUR public client, not wallet) ───
@@ -547,6 +628,145 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
   }
   return out;
 }
+
+  // ─── Who is on each square, from this round's Staked logs ───
+  // 25 getCellStakers() reads per poll would be far too heavy, so the map is
+  // built once per round from one filtered getLogs (roundId is indexed) and
+  // then kept live by the SSE cell_picked feed. The interval below is the
+  // safety net for a dropped event or a missed SSE frame.
+  const loadCellPlayers = useCallback(async (roundId) => {
+    const rid = Number(roundId);
+    if (!rid) return;
+    try {
+      const logs = await getEventsChunked({
+        eventName: "Staked",
+        args: { roundId: BigInt(rid) },
+        sinceBlocks: ROUND_LOG_SPAN,
+      });
+      if (cellPlayersRound.current !== rid) return; // board moved on mid-flight
+      const next = freshPlayers();
+      for (const l of logs) {
+        const c = Number(l.args.cell);
+        const who = String(l.args.player || "").toLowerCase();
+        if (!who || !(c >= 0 && c < TOTAL_CELLS)) continue;
+        if (!next[c].includes(who)) next[c].push(who);
+      }
+      setCellPlayers((prev) => {
+        // keep the live SSE arrivals the scan is too old to have seen
+        let same = true;
+        for (let i = 0; i < TOTAL_CELLS; i++) {
+          for (const w of prev[i] || []) if (!next[i].includes(w)) next[i].push(w);
+          if (same && (prev[i]?.length !== next[i].length || prev[i].some((w, j) => w !== next[i][j]))) same = false;
+        }
+        return same ? prev : next; // nothing new — don't churn the board
+      });
+    } catch (e) {
+      console.warn("[avatars] staked scan failed:", e.shortMessage || e.message);
+    }
+  }, []);
+
+  // New round — clear the stack, then rebuild it for the round now on the board
+  useEffect(() => {
+    if (round <= 0) return;
+    cellPlayersRound.current = round;
+    setCellPlayers(freshPlayers());
+    loadCellPlayers(round);
+  }, [round, loadCellPlayers]);
+
+  // Safety net: cheap (one getLogs), and slower still while SSE is healthy
+  useEffect(() => {
+    const iv = setInterval(
+      () => loadCellPlayers(cellPlayersRound.current),
+      sseConnected ? 20000 : 8000
+    );
+    return () => clearInterval(iv);
+  }, [sseConnected, loadCellPlayers]);
+
+  // ─── Address -> profile (Twitter handle + avatar), public read ───
+  // Privy only exposes the signed-in user's profile, so every player publishes
+  // their own row via /api/profile and the board reads them all back here.
+  // Each address is asked for once per session; a miss just leaves the
+  // coloured-initial fallback in place.
+  useEffect(() => {
+    if (!SUPABASE_URL || !SUPABASE_ANON) return;
+    const want = [];
+    for (const list of cellPlayers) {
+      for (const a of list) {
+        if (!/^0x[0-9a-f]{40}$/.test(a) || profilesAsked.current.has(a)) continue;
+        profilesAsked.current.add(a);
+        want.push(a);
+      }
+    }
+    if (want.length === 0) return;
+    fetch(
+      `${SUPABASE_URL}/rest/v1/griddy_players?select=address,twitter_username,pfp_url&address=in.(${want.slice(0, 60).join(",")})`,
+      { headers: dbHeaders, cache: "no-store" }
+    )
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows) => {
+        if (!Array.isArray(rows) || rows.length === 0) return;
+        setProfiles((prev) => {
+          const next = { ...prev };
+          for (const r of rows) {
+            next[String(r.address).toLowerCase()] = {
+              twitter_username: r.twitter_username || null,
+              pfp_url: r.pfp_url || null,
+            };
+          }
+          return next;
+        });
+      })
+      .catch(() => {});
+  }, [cellPlayers]);
+
+  // ─── Publish MY profile once after login ───
+  // The route derives the address from the Privy tokens it verifies, so this
+  // call carries no identity of its own — it cannot write anyone else's row.
+  const profileSyncKey = useRef("");
+  useEffect(() => {
+    if (!authenticated || !address) return;
+    const me = address.toLowerCase();
+    const key = `${me}:${identityToken ? "id" : "no"}`;
+    if (profileSyncKey.current === key) return;
+    // one attempt without an identity token, one more if it arrives later
+    if (profileSyncKey.current.startsWith(`${me}:`) && !identityToken) return;
+    profileSyncKey.current = key;
+    // your own avatar shows immediately; the round-trip is what makes it
+    // visible to everybody else
+    if (twitterPfp || user?.twitter?.username) {
+      setProfiles((prev) => ({
+        ...prev,
+        [me]: { twitter_username: user?.twitter?.username || null, pfp_url: twitterPfp },
+      }));
+    }
+    (async () => {
+      try {
+        const token = await getAccessToken();
+        if (!token) return;
+        const r = await fetch("/api/profile", {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${token}`,
+            ...(identityToken ? { "privy-id-token": identityToken } : {}),
+          },
+        });
+        if (!r.ok) {
+          console.warn("[profile] not published:", r.status);
+          return;
+        }
+        const row = await r.json();
+        if (!row?.address) return;
+        const saved = String(row.address).toLowerCase();
+        profilesAsked.current.delete(saved);
+        setProfiles((prev) => ({
+          ...prev,
+          [saved]: { twitter_username: row.twitter_username || null, pfp_url: row.pfp_url || null },
+        }));
+      } catch (e) {
+        console.warn("[profile] sync failed:", e.message);
+      }
+    })();
+  }, [authenticated, address, identityToken, twitterPfp, user, getAccessToken]);
 
   // Round history read straight from chain logs — trustless, and needs no
   // database or credentials. Read in chunks — see getEventsChunked.
@@ -895,16 +1115,22 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
       setSelectedCell(null);
       if (targetRoundId > round) {
         // Our stake opened the next round — optimistically start its clock;
-        // the poll confirms the real startTime/endTime. On V7 the round ends
-        // on the grid boundary currentWindow() advertised, not now + 30s.
+        // the poll confirms the real startTime/endTime. From V8 a new round
+        // always runs a FULL roundDuration from the moment it opens, so the
+        // prediction is now + duration rather than the grid boundary (which
+        // would under-count the clock for one poll on the opening stake).
         const nowSec = Math.floor(Date.now() / 1000);
         const g = gridWindow.current;
-        const predictedEnd = g ? bettableWindowEnd(nowSec, g.anchor, g.dur) : nowSec + ROUND_DURATION;
+        const predictedEnd = nowSec + (g?.dur || ROUND_DURATION);
         setRound(targetRoundId);
         setRoundStart(nowSec);
         setRoundEnd(predictedEnd);
       }
       pollState();
+      // Your avatar joins the square straight away — the 60ms defer lets the
+      // round-change effect settle first when this stake opened a new round.
+      setTimeout(() => notePlayerOnCell(targetRoundId, cellIndex, address), 60);
+      setTimeout(() => loadCellPlayers(cellPlayersRound.current), 2500);
     } catch (e) {
       const msg = e.shortMessage || e.message || "Transaction failed";
       setError(msg);
@@ -1005,6 +1231,9 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
   const viewCellTotals = isNextRoundView ? EMPTY_TOTALS : cellTotals;
   const viewMyStakes = isNextRoundView ? EMPTY_TOTALS : myStakes;
   const viewClaimedCells = isNextRoundView ? EMPTY_SET : claimedCells;
+  const viewCellPlayers = isNextRoundView ? EMPTY_PLAYERS : cellPlayers;
+  const avBox = avatarBox(tilePx);
+  const myAddr = address ? address.toLowerCase() : null;
 
   const actualDuration = (roundEnd > 0 && roundStart > 0) ? (roundEnd - roundStart) : ROUND_DURATION;
   // Countdown source: a materialised live round counts its own clock; anything
@@ -1616,13 +1845,32 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
               }} />
             )}
 
-            <div style={S.grid} className="grid-cells">
+            {/* Resolving: the board is settling, so dim the whole panel and
+                 hold it until the round lands. Clears the moment roundState
+                 leaves "revealing". */}
+            {roundState === "revealing" && (
+              <div style={S.resolveVeil} className="grid-resolve-veil">
+                <span style={S.resolveSpinner}><span style={S.resolveSpinnerInner} /></span>
+                <span style={S.resolveTitle}>RESOLVING ROUND {round}</span>
+                <span style={S.resolveSub}>
+                  <span style={S.revealDot} />drand beacon verifying on-chain
+                </span>
+              </div>
+            )}
+
+            <div style={S.grid} className="grid-cells" ref={gridRef}>
               {CELL_LABELS.map((label, idx) => {
                 const state = getCellState(idx);
                 const isSelected = selectedCell === idx;
                 const isWinnerCell = false; // winner is never highlighted on the board
                 const isMiss = resolved && winningCell >= 0 && !isWinnerCell && (state === "claimed" || state === "yours");
                 const count = viewCellCounts[idx] || 0;
+                // Everyone standing on this square, packed from the top-left.
+                // Only as many as actually fit are drawn; the rest roll into a
+                // "+N" chip so a crowded tile never spills over the keycap.
+                const players = viewCellPlayers[idx] || [];
+                const overflow = players.length > avBox.slots ? players.length - (avBox.slots - 1) : 0;
+                const shown = overflow ? players.slice(0, avBox.slots - 1) : players;
                 return (
                   <button
                     key={idx}
@@ -1634,6 +1882,9 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
                       ...(isSelected ? S.cellSelected : {}),
                       ...(state === "winner" ? S.cellWinner : {}),
                       ...(isMiss ? S.cellMiss : {}),
+                      // avatars own the top of a busy tile, so the figures
+                      // settle along the bottom instead of underneath them
+                      ...(players.length > 0 ? { alignItems: "flex-end", paddingBottom: "6%" } : {}),
                       transition: "all 0.12s ease",
                       animationDelay: isWinnerCell ? "0s" : `${Math.floor(idx / GRID_SIZE) * 0.05}s`,
                     }}
@@ -1659,18 +1910,36 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
                     {count > 0 && state !== "winner" && state !== "yours" && !isMiss && (
                       <span style={S.cellCount}>{count}</span>
                     )}
+                    {players.length > 0 && (
+                      <span
+                        style={{ ...S.avatarLayer, left: avBox.padX, right: avBox.padX, top: avBox.padTop, bottom: avBox.padX }}
+                      >
+                        {shown.map((addr) => (
+                          <PlayerAvatar
+                            key={addr}
+                            addr={addr}
+                            profile={profiles[addr]}
+                            isYou={addr === myAddr}
+                            size={avBox.size}
+                            font={avBox.font}
+                          />
+                        ))}
+                        {overflow > 0 && (
+                          <span style={{ ...S.avatarMore, width: avBox.size, height: avBox.size, fontSize: avBox.font }}>
+                            +{overflow}
+                          </span>
+                        )}
+                      </span>
+                    )}
                     <span style={S.cellCenter}>
                       {state === "winner" ? (
                         <span style={{ fontSize: 26, animation: "winnerPop 0.6s ease-out" }}>✦</span>
                       ) : isMiss ? (
                         <span style={{ fontSize: 18, fontWeight: 700, color: "#43537A" }}>✕</span>
                       ) : state === "yours" ? (
+                        // your own avatar now rides in the packed stack above,
+                        // so the centre carries just the figures
                         <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                          {twitterPfp && (
-                            <img src={twitterPfp} alt="" referrerPolicy="no-referrer"
-                              onError={(e) => { e.currentTarget.style.display = "none"; }}
-                              style={S.cellAvatarSm} />
-                          )}
                           <span style={S.cellYouTag}>${fmt(viewMyStakes[idx])}</span>
                           <span style={{ fontSize: 8, color: "#0A1E4A", fontWeight: 700 }}>of ${fmt(viewCellTotals[idx])}</span>
                         </span>
@@ -2039,6 +2308,8 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
           .grid-timer-big { font-size: 22px !important; line-height: 1 !important; }
           .grid-timer-bar { width: 100% !important; }
           .grid-outer-panel { padding: 9px !important; border-radius: 18px !important; }
+          /* veil follows the panel's own corner radius */
+          .grid-resolve-veil { border-radius: 18px !important; gap: 8px !important; }
           .grid-cells { gap: 7px !important; }
           .grid-status-bar { padding: 2px !important; }
           .grid-stat-row { padding: 7px 0 !important; border-radius: 14px !important; }
@@ -2150,6 +2421,40 @@ function StakePicker({ value, onChange, minStake, stakeWei }) {
         <div style={{ fontSize: 9.5, color: "#FF6B5E" }}>minimum stake is ${Number(minStake) / 1e18}</div>
       )}
     </div>
+  );
+}
+
+/**
+ * One participant in a square's stack. The coloured initial is the base layer
+ * and the photo sits on top of it, so a wallet with no published profile — or
+ * an avatar URL that 404s — degrades to the initial with no extra state.
+ */
+function PlayerAvatar({ addr, profile, isYou, size, font }) {
+  const hue = avatarHue(addr);
+  const initial = String(profile?.twitter_username || addr.slice(2)).slice(0, 1).toUpperCase();
+  return (
+    <span
+      title={profile?.twitter_username ? `@${profile.twitter_username}` : `${addr.slice(0, 6)}…${addr.slice(-4)}`}
+      style={{
+        ...S.avatarChip,
+        width: size, height: size, fontSize: font,
+        background: `linear-gradient(150deg, hsl(${hue} 58% 46%), hsl(${(hue + 40) % 360} 54% 30%))`,
+        boxShadow: isYou
+          ? "0 0 0 1.5px rgba(255,255,255,0.92), 0 2px 6px rgba(0,0,0,0.45)"
+          : "0 0 0 1px rgba(7,18,48,0.55)",
+      }}
+    >
+      <span style={S.avatarInitial}>{initial}</span>
+      {profile?.pfp_url && (
+        <img
+          src={profile.pfp_url}
+          alt=""
+          referrerPolicy="no-referrer"
+          onError={(e) => { e.currentTarget.style.display = "none"; }}
+          style={S.avatarImg}
+        />
+      )}
+    </span>
   );
 }
 
@@ -2387,13 +2692,67 @@ const S = {
   },
   // a small marker, not a tile fill — the square still reads as a keycap
   cellAvatar: {
-    width: 12, height: 12, borderRadius: "50%", objectFit: "cover",
-    border: "1px solid rgba(255,255,255,0.8)",
-    boxShadow: "0 1px 4px rgba(0,0,0,0.5)",
+    width: 30, height: 30, borderRadius: "50%", objectFit: "cover",
+    border: "1.5px solid rgba(255,255,255,0.85)",
+    boxShadow: "0 2px 6px rgba(0,0,0,0.5)",
   },
-  cellAvatarSm: {
-    width: 12, height: 12, borderRadius: "50%", objectFit: "cover",
-    border: "1px solid rgba(7,18,48,0.55)",
+  // ── Packed staker stack: top-left, left-to-right, wrapping down ──
+  // clicks land on the keycap underneath (they bubble to the button), so the
+  // stack stays hoverable for names without stealing the tap target
+  avatarLayer: {
+    position: "absolute", display: "flex", flexWrap: "wrap",
+    alignContent: "flex-start", justifyContent: "flex-start",
+    gap: AV_GAP, overflow: "hidden", zIndex: 3,
+    userSelect: "none", WebkitUserSelect: "none",
+  },
+  avatarChip: {
+    position: "relative", flex: "0 0 auto", borderRadius: "50%",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    overflow: "hidden", lineHeight: 1,
+  },
+  avatarInitial: {
+    fontFamily: "'Baloo 2', sans-serif", fontWeight: 800,
+    color: "rgba(255,255,255,0.92)", letterSpacing: 0,
+  },
+  avatarImg: {
+    position: "absolute", inset: 0, width: "100%", height: "100%",
+    objectFit: "cover", borderRadius: "50%",
+  },
+  avatarMore: {
+    flex: "0 0 auto", borderRadius: "50%",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, lineHeight: 1,
+    background: "rgba(7,18,48,0.82)", color: "#9FC2FF",
+    boxShadow: "0 0 0 1px rgba(62,139,255,0.45)",
+  },
+
+  // ── Resolving veil: the whole board settles behind it ──
+  resolveVeil: {
+    position: "absolute", inset: 0, zIndex: 20, borderRadius: 22,
+    background: "rgba(6,11,28,0.74)", backdropFilter: "blur(2px)",
+    display: "flex", flexDirection: "column", alignItems: "center",
+    justifyContent: "center", gap: 10, cursor: "default",
+    animation: "fadeIn 0.25s ease",
+  },
+  resolveSpinner: {
+    width: 46, height: 46, borderRadius: "50%",
+    border: "2px solid rgba(62,139,255,0.16)", borderTopColor: "#3E8BFF",
+    display: "flex", alignItems: "center", justifyContent: "center",
+    animation: "spin 0.9s linear infinite",
+  },
+  resolveSpinnerInner: {
+    width: 26, height: 26, borderRadius: "50%",
+    border: "2px solid rgba(62,139,255,0.12)", borderBottomColor: "#6FB0FF",
+    animation: "spinR 1.4s linear infinite",
+  },
+  resolveTitle: {
+    fontSize: 11, letterSpacing: 2.5, fontWeight: 700, color: "#6FB0FF",
+    fontFamily: "'JetBrains Mono', monospace",
+  },
+  resolveSub: {
+    display: "inline-flex", alignItems: "center", gap: 6,
+    fontSize: 9.5, letterSpacing: 1, color: "#55688F",
+    fontFamily: "'JetBrains Mono', monospace",
   },
   cellLabel: { position: "absolute", top: 7, left: 9, fontSize: 8, letterSpacing: 1, opacity: 0.45 },
   statusBar: { display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, width: "100%", padding: "2px 4px", fontSize: 10, letterSpacing: 1.5, color: "#55688F", flexShrink: 0, whiteSpace: "nowrap", overflow: "hidden" },
