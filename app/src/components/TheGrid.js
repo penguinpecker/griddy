@@ -277,8 +277,10 @@ export default function TheGrid() {
     url: SSE_URL,
     onRoundResolved: () => {
       pollState();
-      // drand beacons are final at emission — one refresh picks up the TX hash
-      setTimeout(refreshHistoryTop, 3000);
+      // The keeper writes the row to Postgres just after it resolves, so retry
+      // briefly rather than betting on a single delay — the new round should
+      // appear in the panel within a few seconds, with no page refresh.
+      [1200, 3500, 8000].forEach((ms) => setTimeout(refreshHistoryTop, ms));
     },
     onCellPicked: (data) => {
       setCellCounts(prev => {
@@ -546,8 +548,42 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
   // database or credentials. Read in chunks — see getEventsChunked.
   const chainHistory = useRef(null);
 
+  // Prefer the keeper's Postgres mirror: one request instead of walking the
+  // chain in 9k-block chunks (which needed ~45 sequential RPC round-trips and
+  // took 30s+). Chain remains the fallback and the source of truth.
+  const loadDbHistory = async () => {
+    if (!SUPABASE_URL || !SUPABASE_ANON) return null;
+    try {
+      const r = await fetch(
+        `${SUPABASE_URL}/rest/v1/griddy_rounds?select=round_id,winning_cell,total_staked_wei,total_stakers,drand_round,resolve_tx_hash&order=round_id.desc&limit=100`,
+        { headers: dbHeaders, cache: "no-store" }
+      );
+      if (!r.ok) return null;
+      const rows = await r.json();
+      if (!Array.isArray(rows) || rows.length === 0) return null;
+      return rows.map((x) => ({
+        roundId: Number(x.round_id),
+        cell: Number(x.winning_cell),
+        players: Number(x.total_stakers || 0),
+        pot: String(x.total_staked_wei || "0"),
+        resolved: true,
+        txHash: x.resolve_tx_hash || null,
+        drandRound: x.drand_round ? Number(x.drand_round) : null,
+      }));
+    } catch {
+      return null;
+    }
+  };
+
   const loadChainHistory = async () => {
     if (chainHistory.current) return chainHistory.current;
+    const fromDb = await loadDbHistory();
+    if (fromDb) {
+      chainHistory.current = fromDb;
+      historyFullyLoadedRef.current = true;
+      setHistoryFullyLoaded(true);
+      return fromDb;
+    }
     const logs = await getEventsChunked({ eventName: "RoundResolved", stopAfter: 60 });
     const rows = await Promise.all(
       logs.slice().reverse().map(async (l) => {

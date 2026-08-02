@@ -23,11 +23,12 @@ export default function Providers({ children }) {
         },
         embeddedWallets: {
           createOnLogin: "all-users",
-          // The app runs in user-controlled mode, so Privy must be allowed to
-          // show its own confirmation/passcode prompt. With this false the
-          // embedded wallet waits forever for an authorization the player is
-          // never asked for, and the stake button hangs on "CONFIRMING TX...".
-          showWalletUIs: true,
+          // showWalletUIs is deliberately NOT set here. Privy falls back to the
+          // app's Dashboard setting, so per-transaction confirmations can be
+          // turned off there without a redeploy. Hardcoding it false while the
+          // Dashboard still requires confirmation is what made stakes hang on
+          // "CONFIRMING TX..." — the wallet waited for an approval the player
+          // was never shown.
         },
         defaultChain: gameChain,
         supportedChains: [gameChain],
