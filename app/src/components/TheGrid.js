@@ -2054,7 +2054,7 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
             </div>
             <div style={S.statCell}>
               <span style={S.statValueTop}>{myTotalStaked > 0n ? `$${fmt(myTotalStaked)}` : "—"}</span>
-              <span style={S.statLabel}>YOU’RE IN</span>
+              <span style={S.statLabel}>YOUR STAKE</span>
             </div>
           </div>
 
@@ -2102,7 +2102,7 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
 
                   <div style={S.betRows} className="grid-bet-rows">
                     <div style={S.betRow}>
-                      <span>You’re in for</span>
+                      <span>Your stake</span>
                       <b style={{ color: "#EAF1FF" }}>${stakeAmount || "0"}</b>
                     </div>
                     <div style={S.betRow}>
