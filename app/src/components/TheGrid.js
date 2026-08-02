@@ -1282,12 +1282,17 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
   // Countdown source: a materialised live round counts its own clock; anything
   // else counts the grid window down. windowSpan === 0 (no V7 currentWindow)
   // keeps the pre-V7 presentation, so the app degrades instead of lying.
-  // The reveal decorates the board but must never stop the clock: it keeps
-  // counting the window the next stake buys into, exactly as it does when idle.
-  const showWindowClock = windowSpan > 0 && (isNextRoundView || revealActive);
+  // While the result is on screen the panel shows the RESULT, not a countdown —
+  // a next-round clock ticking above a "round 25 winner" cover reads as though
+  // the two belong together. The grid clock itself never stops (it cannot; it
+  // is the chain's), it is simply not the thing being displayed for those 3s,
+  // and it reappears at its true remaining value rather than a fresh 60.
+  const showWindowClock = windowSpan > 0 && isNextRoundView;
   const countdown = showWindowClock ? smoothWindowTime : smoothTime;
   const countdownSpan = showWindowClock ? windowSpan : actualDuration;
-  const timerProgress = countdownSpan > 0 ? Math.min(1, countdown / countdownSpan) : 0;
+  // Bar empties for the result hold — the round it belonged to is over.
+  const timerProgress = revealActive ? 0
+    : countdownSpan > 0 ? Math.min(1, countdown / countdownSpan) : 0;
   const timerColor = roundState !== "live" ? "#3E8BFF" : smoothTime > 10 ? "#3E8BFF" : smoothTime > 5 ? "#6FB0FF" : "#FF6B5E";
 
   const getStatus = () => {
@@ -1868,12 +1873,15 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
           <div style={S.timerPanel} className="grid-timer-panel">
             <div style={S.timerLabel}>
               {roundState === "init" ? "INITIALIZING"
+                : revealActive ? `ROUND ${round} RESULT`
                 : showWindowClock ? "NEXT ROUND CLOSES"
                 : isNextRoundView ? "BETTING OPEN"
                 : "PICK A SQUARE"}
             </div>
             <div style={{ ...S.timerBig, color: timerColor }} className="grid-timer-big">
-              {isNextRoundView && !showWindowClock ? "READY" : timerDisplay}
+              {revealActive ? CELL_LABELS[winningCell]
+                : isNextRoundView && !showWindowClock ? "READY"
+                : timerDisplay}
             </div>
             <div style={S.timerBarBg} className="grid-timer-bar">
               <div style={{
