@@ -2385,14 +2385,15 @@ const S = {
     boxShadow: "0 0 18px rgba(62,139,255,0.55)",
     zIndex: 2,
   },
+  // a small marker, not a tile fill — the square still reads as a keycap
   cellAvatar: {
-    width: "56%", maxWidth: 46, aspectRatio: "1", borderRadius: "50%",
-    objectFit: "cover", border: "2px solid rgba(255,255,255,0.85)",
-    boxShadow: "0 2px 10px rgba(0,0,0,0.45)",
+    width: 12, height: 12, borderRadius: "50%", objectFit: "cover",
+    border: "1px solid rgba(255,255,255,0.8)",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.5)",
   },
   cellAvatarSm: {
-    width: 20, height: 20, borderRadius: "50%", objectFit: "cover",
-    border: "1.5px solid rgba(7,18,48,0.55)",
+    width: 12, height: 12, borderRadius: "50%", objectFit: "cover",
+    border: "1px solid rgba(7,18,48,0.55)",
   },
   cellLabel: { position: "absolute", top: 7, left: 9, fontSize: 8, letterSpacing: 1, opacity: 0.45 },
   statusBar: { display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, width: "100%", padding: "2px 4px", fontSize: 10, letterSpacing: 1.5, color: "#55688F", flexShrink: 0, whiteSpace: "nowrap", overflow: "hidden" },
