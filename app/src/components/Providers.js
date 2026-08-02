@@ -32,7 +32,10 @@ export default function Providers({ children }) {
         },
         defaultChain: gameChain,
         supportedChains: [gameChain],
-        loginMethods: ["twitter", "wallet"],
+        // X only. External wallets (MetaMask, OKX) were offered but never
+        // completed a login here, and the game signs from the Privy embedded
+        // wallet anyway — an injected wallet has no path through the flow.
+        loginMethods: ["twitter"],
       }}
     >
       {children}

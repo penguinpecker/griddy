@@ -114,6 +114,10 @@ const ROUND_DURATION = 60; // fallback window length — chain currentWindow() i
 // already closed to new bets, so the next stake (and the countdown) rolls into
 // the following window. Kept in sync with GriddyV7.MIN_BET_WINDOW.
 const MIN_BET_WINDOW = 6;
+// How long the settled board is held up after a resolution lands: winning cell
+// lit, every other staked cell crossed out. Long enough to read, short enough
+// that it is gone well before the next 60s window closes.
+const REVEAL_MS = 5000;
 /**
  * End of the window a stake sent at `nowSec` would land in, stepped locally
  * off the last boundary the chain reported. Mirrors GriddyV7._bettableWindow
@@ -241,6 +245,12 @@ export default function TheGrid() {
   const [activePlayers, setActivePlayers] = useState(0);
   const [resolved, setResolved] = useState(false);
   const [winningCell, setWinningCell] = useState(-1);
+  // The post-resolution reveal: { roundId, cell }. Set ONLY when a resolution
+  // is witnessed for the round currently on the board, and cleared the instant
+  // `round` moves on — so a lit cell can never appear on a board that has been
+  // reset for the next round (which is what made the winner read as
+  // "pre-selected" before it was pulled entirely).
+  const [reveal, setReveal] = useState(null);
   const [claimedCells, setClaimedCells] = useState(new Set());
   const [cellCounts, setCellCounts] = useState(new Array(TOTAL_CELLS).fill(0));
   const [cellTotals, setCellTotals] = useState(new Array(TOTAL_CELLS).fill(0n));
@@ -307,6 +317,10 @@ export default function TheGrid() {
   const lastRoundRef = useRef(0);
   const resolverCalledForRound = useRef(0);
   const resolvedRef = useRef(false);
+  // The round id we have observed in an UNRESOLVED state. Only that round may
+  // trigger a reveal, so a page load that finds a long-settled round never
+  // lights its winning cell. -1 = nothing armed.
+  const revealArmedRound = useRef(-1);
   const hasStakesRef = useRef(false);
 
   // ─── Refresh top of history table (picks up TX hash + drand round after resolution) ───
@@ -538,6 +552,11 @@ export default function TheGrid() {
         setActivePlayers(Number(rd[7]));
         hasStakesRef.current = Number(rd[7]) > 0;
         const isResolved = rd[4];
+        // Arm the reveal only for a round we have actually watched run. Landing
+        // on the page long after a round settled must NOT replay its result:
+        // that is a stale winner lit over a board nobody was watching, which
+        // reads exactly like the cell was picked in advance.
+        if (!isResolved) revealArmedRound.current = rNum;
         setResolved(isResolved);
         resolvedRef.current = isResolved;
         if (isResolved && Number(rd[3]) >= 0) {
@@ -1015,6 +1034,10 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
       setWinningCell(-1);
       setResolved(false);
       resolvedRef.current = false;
+      // The board behind the reveal has just been wiped, so the reveal has to
+      // go with it — a winning tile lit over an empty grid is exactly the
+      // "pre-selected" artefact this feature must never reproduce.
+      setReveal(null);
     }
   }, [round]);
 
@@ -1032,6 +1055,12 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
       setLastResult(result);
       setMoneyFlow(true);
       setTimeout(() => setMoneyFlow(false), 2500);
+      // Hold the settled board up for a beat before the next round's slate —
+      // but only for a round we watched go from open to settled.
+      if (revealArmedRound.current === round) {
+        setReveal({ roundId: round, cell: winningCell });
+        revealArmedRound.current = -1;
+      }
       // Upsert: update existing entry or prepend new one
       setRoundHistory(prev => {
         const idx = prev.findIndex(r => r.roundId === round);
@@ -1046,6 +1075,13 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
     }
   }, [resolved, winningCell]);
 
+  // ─── Retire the reveal after its window ───
+  useEffect(() => {
+    if (!reveal) return;
+    const t = setTimeout(() => setReveal(null), REVEAL_MS);
+    return () => clearTimeout(t);
+  }, [reveal]);
+
   // ─── Stake USDC on a cell (native value, no approvals) ───
   const stakeOnCell = async (cellIndex, amountWei) => {
     if (!wallet || claiming || round === 0 || roundEnd === 0) return;
@@ -1055,7 +1091,7 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
     const balNow = BigInt(ethBalance || 0);
     const spendableNow = balNow > GAS_RESERVE ? balNow - GAS_RESERVE : 0n;
     if (amountWei > spendableNow) {
-      setError(`Not enough USDC — you can play up to $${fmt(spendableNow)} (balance $${fmt(balNow)}, the rest covers gas)`);
+      setError(`Not enough USDC — you can place up to $${fmt(spendableNow)} (balance $${fmt(balNow)}, the rest covers gas)`);
       return;
     }
     setClaiming(true);
@@ -1221,7 +1257,12 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
     : smoothTime > 0 ? "live"
     : (!resolved && (activePlayers > 0 || claimedCells.size > 0)) ? "revealing"
     : "idle";
-  const isNextRoundView = roundState === "revealing" || roundState === "idle";
+  // While the reveal is up, keep the SETTLED round on the board — its stakes,
+  // its pot, its winner — instead of switching to the next round's blank slate.
+  // Gated on reveal.roundId === round so it can only ever decorate the board it
+  // was computed from.
+  const revealActive = reveal != null && reveal.roundId === round && winningCell >= 0 && resolved;
+  const isNextRoundView = !revealActive && (roundState === "revealing" || roundState === "idle");
   const displayRound = isNextRoundView ? round + 1 : round;
   // While showing the not-yet-opened next round, present a clean slate — the
   // polled state still holds the previous round until the roll lands on-chain
@@ -1239,7 +1280,9 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
   // Countdown source: a materialised live round counts its own clock; anything
   // else counts the grid window down. windowSpan === 0 (no V7 currentWindow)
   // keeps the pre-V7 presentation, so the app degrades instead of lying.
-  const showWindowClock = windowSpan > 0 && isNextRoundView;
+  // The reveal decorates the board but must never stop the clock: it keeps
+  // counting the window the next stake buys into, exactly as it does when idle.
+  const showWindowClock = windowSpan > 0 && (isNextRoundView || revealActive);
   const countdown = showWindowClock ? smoothWindowTime : smoothTime;
   const countdownSpan = showWindowClock ? windowSpan : actualDuration;
   const timerProgress = countdownSpan > 0 ? Math.min(1, countdown / countdownSpan) : 0;
@@ -1247,18 +1290,21 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
 
   const getStatus = () => {
     if (roundState === "init") return "INITIALIZING...";
-    // The window is already running, so "first play starts the clock" would be
-    // a lie once the countdown above it is ticking.
+    if (revealActive) return `ROUND ${round} — ${CELL_LABELS[winningCell]} WINS`;
+    // V9: the clock is a pure function of the grid, so betting is open in every
+    // state except init — no wording here may suggest a player starts it.
     if (showWindowClock) return `ROUND ${displayRound} — BETTING OPEN`;
-    if (roundState === "revealing") return `ROUND ${displayRound} — FIRST PLAY STARTS THE CLOCK`;
-    if (roundState === "idle") return `ROUND ${displayRound} — FIRST PLAY STARTS THE CLOCK`;
-    if (!ready || !authenticated) return `ROUND ${round} — LOGIN TO PLAY`;
+    if (roundState === "revealing") return `ROUND ${displayRound} — BETTING OPEN`;
+    if (roundState === "idle") return `ROUND ${displayRound} — BETTING OPEN`;
+    if (!ready || !authenticated) return `ROUND ${round} — LOGIN TO PLACE`;
     return `ROUND ${round} ACTIVE`;
   };
 
   const getCellState = (idx) => {
-    // the winning square is intentionally NOT shown on the board — the round
-    // history panel reports every winner, and a lit tile reads as a pick
+    // The winner is shown ONLY during the post-resolution reveal, over the very
+    // board that produced it. Outside that window a lit tile would read as a
+    // pick rather than a result.
+    if (revealActive && idx === winningCell) return "winner";
     if (viewMyStakes[idx] > 0n) return "yours";
     if (viewClaimedCells.has(idx)) return "claimed";
     return "empty";
@@ -1450,7 +1496,7 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
                 ? "⟐ SCANNING ROUNDS..."
                 : "NO ROUNDS YET — STAKE A CELL TO START YOUR HISTORY"}
           </span>
-          <span style={S.histEmptySub}>every round you play lands here — win or lose, straight from the chain</span>
+          <span style={S.histEmptySub}>every round you place lands here — win or lose, straight from the chain</span>
         </div>
       </div>
     );
@@ -1804,7 +1850,13 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
           {/* One line for the previous round: it is revealing, or it is done.
                (Was three — a "TOTAL POT" label over an obvious pot, plus a
                last-result pill and a winner chip that said the same thing.) */}
-          {roundState === "revealing" ? (
+          {/* The result outranks the "revealing" chip: once the reveal is up the
+               round has landed, whatever the polled roundState still says. */}
+          {revealActive ? (
+            <div style={{ ...S.revealChip, ...S.winnerChip }} className="grid-reveal-chip">
+              R{round} — {CELL_LABELS[winningCell]} WINS
+            </div>
+          ) : roundState === "revealing" ? (
             <div style={S.revealChip} className="grid-reveal-chip">
               <span style={S.revealDot} />REVEALING R{round}
             </div>
@@ -1816,8 +1868,7 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
             <div style={S.timerLabel}>
               {roundState === "init" ? "INITIALIZING"
                 : showWindowClock ? "NEXT ROUND CLOSES"
-                : roundState === "revealing" ? `ROUND ${displayRound} — FIRST PLAY STARTS THE CLOCK`
-                : roundState === "idle" ? "FIRST PLAY STARTS THE CLOCK"
+                : isNextRoundView ? "BETTING OPEN"
                 : "PICK A SQUARE"}
             </div>
             <div style={{ ...S.timerBig, color: timerColor }} className="grid-timer-big">
@@ -1848,7 +1899,7 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
             {/* Resolving: the board is settling, so dim the whole panel and
                  hold it until the round lands. Clears the moment roundState
                  leaves "revealing". */}
-            {roundState === "revealing" && (
+            {roundState === "revealing" && !revealActive && (
               <div style={S.resolveVeil} className="grid-resolve-veil">
                 <span style={S.resolveSpinner}><span style={S.resolveSpinnerInner} /></span>
                 <span style={S.resolveTitle}>RESOLVING ROUND {round}</span>
@@ -1862,8 +1913,12 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
               {CELL_LABELS.map((label, idx) => {
                 const state = getCellState(idx);
                 const isSelected = selectedCell === idx;
-                const isWinnerCell = false; // winner is never highlighted on the board
-                const isMiss = resolved && winningCell >= 0 && !isWinnerCell && (state === "claimed" || state === "yours");
+                const isWinnerCell = state === "winner";
+                // Every OTHER cell dims during the reveal; the ones that were
+                // actually staked get crossed out, so the loss is explicit
+                // rather than merely unlit.
+                const isMiss = revealActive && !isWinnerCell && (state === "claimed" || state === "yours");
+                const isDimmed = revealActive && !isWinnerCell;
                 const count = viewCellCounts[idx] || 0;
                 // Everyone standing on this square, packed from the top-left.
                 // Only as many as actually fit are drawn; the rest roll into a
@@ -1882,11 +1937,15 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
                       ...(isSelected ? S.cellSelected : {}),
                       ...(state === "winner" ? S.cellWinner : {}),
                       ...(isMiss ? S.cellMiss : {}),
+                      ...(isDimmed ? S.cellDimmed : {}),
                       // avatars own the top of a busy tile, so the figures
                       // settle along the bottom instead of underneath them
                       ...(players.length > 0 ? { alignItems: "flex-end", paddingBottom: "6%" } : {}),
                       transition: "all 0.12s ease",
-                      animationDelay: isWinnerCell ? "0s" : `${Math.floor(idx / GRID_SIZE) * 0.05}s`,
+                      // Constant per cell: making this depend on winner/reveal
+                      // state would restart the entry animation every time the
+                      // reveal comes and goes.
+                      animationDelay: `${Math.floor(idx / GRID_SIZE) * 0.05}s`,
                     }}
                     onMouseEnter={() => setHoveredCell(idx)}
                     onMouseLeave={() => setHoveredCell(-1)}
@@ -1935,7 +1994,7 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
                       {state === "winner" ? (
                         <span style={{ fontSize: 26, animation: "winnerPop 0.6s ease-out" }}>✦</span>
                       ) : isMiss ? (
-                        <span style={{ fontSize: 18, fontWeight: 700, color: "#43537A" }}>✕</span>
+                        <span style={{ fontSize: 20, fontWeight: 700, color: "#C3D3F5" }}>✕</span>
                       ) : state === "yours" ? (
                         // your own avatar now rides in the packed stack above,
                         // so the centre carries just the figures
@@ -1982,7 +2041,10 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
 
           {/* Stat row — real data only */}
           <div style={S.statRow} className="grid-stat-row">
-            <div style={S.statCell}>
+            <div
+              style={S.statCell}
+              title="The odds that one of the squares you are on is the square drawn. The draw is weighted by money: a square's chance of being picked is its share of the pot. This is NOT your share of the prize — that is set separately, pro-rata, inside the winning square."
+            >
               <span style={S.statValueTop}>{winChancePct != null ? `${winChancePct}%` : "—"}</span>
               <span style={S.statLabel}>⚡ WIN CHANCE</span>
             </div>
@@ -1994,6 +2056,14 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
               <span style={S.statValueTop}>{myTotalStaked > 0n ? `$${fmt(myTotalStaked)}` : "—"}</span>
               <span style={S.statLabel}>YOU’RE IN</span>
             </div>
+          </div>
+
+          {/* What the number above actually means. The draw is stake-weighted,
+               so "win chance" is the odds one of YOUR squares is drawn — a
+               different quantity from your share of the prize, which is settled
+               pro-rata inside the winning square. */}
+          <div style={S.statNote}>
+            win chance = money on your squares ÷ whole pot — the odds one of your squares is drawn, not your share of the prize
           </div>
 
           {/* Bet panel — all viewports */}
@@ -2067,7 +2137,7 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
                   )}
 
                   {!authenticated ? (
-                    <button style={S.betCta} onClick={login}>LOGIN TO PLAY ◎</button>
+                    <button style={S.betCta} onClick={login}>LOGIN TO PLACE ◎</button>
                   ) : claiming ? (
                     <div style={S.claimingBar}><div style={S.claimingDot} />CONFIRMING TX...</div>
                   ) : roundState === "init" ? (
@@ -2078,14 +2148,14 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
                       disabled={belowMin || tooBig}
                       onClick={() => stakeOnCell(selectedCell, stakeWei)}
                     >
-                      {belowMin ? `MIN $${fmt(minStake)}` : tooBig ? `NOT ENOUGH — MAX $${fmt(spendable)}` : `PLAY $${stakeAmount} ON ${CELL_LABELS[selectedCell]} ◎`}
+                      {belowMin ? `MIN $${fmt(minStake)}` : tooBig ? `NOT ENOUGH — MAX $${fmt(spendable)}` : `PLACE $${stakeAmount} ON ${CELL_LABELS[selectedCell]} ◎`}
                     </button>
                   ) : (
                     <button style={{ ...S.betCta, opacity: 0.45, cursor: "default" }} disabled>PICK A SQUARE ◎</button>
                   )}
                   {myTotalStaked > 0n && (
                     <div style={{ fontSize: 9.5, color: "#55688F", textAlign: "center", fontFamily: "'Inter', sans-serif" }}>
-                      you can play more squares or top up — no limit
+                      you can place on more squares or top up — no limit
                     </div>
                   )}
                 </>
@@ -2396,7 +2466,7 @@ function StakePicker({ value, onChange, minStake, stakeWei }) {
         })}
       </div>
       <div style={{ fontSize: 10, letterSpacing: 2, color: "#8FA3C9", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", marginTop: 2 }}>
-        ENTER AMOUNT TO PLAY
+        ENTER AMOUNT TO PLACE
       </div>
       <div style={{ position: "relative" }}>
         <input
@@ -2665,8 +2735,11 @@ const S = {
     border: "1px solid rgba(255,255,255,0.35)",
     color: "#071230",
     transform: "scale(1.06)",
-    boxShadow: "0 0 24px rgba(62,139,255,0.65)",
-    animation: "winnerGlow 1.2s ease-in-out infinite",
+    boxShadow: "0 0 28px rgba(62,139,255,0.75)",
+    // Deliberately NO `animation` here. Setting one would replace the cell's
+    // one-shot entry animation, and removing this style at the end of the
+    // reveal would then restart it — the winning tile visibly fading back in
+    // after the round is over. The static glow reads just as clearly.
     zIndex: 2,
   },
   cellSelected: {
@@ -2681,7 +2754,18 @@ const S = {
     background: "linear-gradient(145deg,#0E1730,#0A1226)",
     border: "1px solid rgba(150,180,255,0.06)",
     boxShadow: "none",
-    opacity: 0.8,
+  },
+  winnerChip: {
+    background: "rgba(62,139,255,0.16)",
+    border: "1px solid rgba(111,176,255,0.55)",
+    color: "#9CC6FF",
+  },
+  // Applies to every non-winning cell for the length of the reveal, so the one
+  // lit square reads instantly against a receded board.
+  cellDimmed: {
+    opacity: 0.32,
+    filter: "saturate(0.5)",
+    transform: "none",
   },
   cellScanSweep: {
     background: "linear-gradient(160deg,#5FA6FF,#2E7BFF)",
@@ -2770,6 +2854,7 @@ const S = {
   statCell: { display: "flex", flexDirection: "column", alignItems: "center", gap: 2, minWidth: 0, padding: "0 6px" },
   statValueTop: { fontFamily: "'Baloo 2', sans-serif", fontSize: 16, fontWeight: 700, color: "#EAF1FF", lineHeight: 1.15, whiteSpace: "nowrap" },
   statLabel: { fontSize: 8.5, letterSpacing: 1.5, color: "#55688F", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", whiteSpace: "nowrap" },
+  statNote: { fontSize: 9.5, lineHeight: 1.5, color: "#55688F", padding: "6px 2px 0", letterSpacing: 0.2 },
 
   // ── Bet panel ──
   betPanel: {
