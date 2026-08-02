@@ -109,10 +109,6 @@ const DRAWER_TABS = [
 ];
 const MIN_STAKE_DEFAULT = 100000000000000000n; // $0.10 — fallback only; chain minStakeWei is the source of truth (keep in step with it: a low fallback lets users submit stakes that revert)
 const ROUND_DURATION = 60; // fallback window length — chain currentWindow() is the source of truth
-// How long the winning square keeps its glow after a round resolves. Without a
-// limit it sits lit on the NEXT round's empty board and reads as a square the
-// player already picked.
-const WINNER_GLOW_MS = 9000;
 // V7 windows sit on a fixed time grid: [epoch + k·duration, epoch + (k+1)·duration).
 // MIN_BET_WINDOW mirrors the contract — a window with less than this left is
 // already closed to new bets, so the next stake (and the countdown) rolls into
@@ -261,9 +257,6 @@ export default function TheGrid() {
   const lastRoundRef = useRef(0);
   const resolverCalledForRound = useRef(0);
   const resolvedRef = useRef(false);
-  const [winnerGlowing, setWinnerGlowing] = useState(false);
-  const winnerGlowRound = useRef(0);
-  const seenUnresolved = useRef(new Set()); // rounds observed live BEFORE they resolved
   const hasStakesRef = useRef(false);
 
   // ─── Refresh top of history table (picks up TX hash + drand round after resolution) ───
@@ -796,6 +789,15 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
   // ─── Stake USDC on a cell (native value, no approvals) ───
   const stakeOnCell = async (cellIndex, amountWei) => {
     if (!wallet || claiming || round === 0 || roundEnd === 0) return;
+    // Guard every entry point, not just the CTA — double-tapping a cell calls
+    // straight in here, and Arc charges gas in USDC so stake + gas must fit
+    // inside the balance or the wallet just refuses to sign.
+    const balNow = BigInt(ethBalance || 0);
+    const spendableNow = balNow > GAS_RESERVE ? balNow - GAS_RESERVE : 0n;
+    if (amountWei > spendableNow) {
+      setError(`Not enough USDC — you can play up to $${fmt(spendableNow)} (balance $${fmt(balNow)}, the rest covers gas)`);
+      return;
+    }
     setClaiming(true);
     setError(null);
     // Rounds never roll forward on their own: a live round takes stakes at its
@@ -937,23 +939,6 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
     setWithdrawing(false);
   };
 
-  // Light the winning square when a round resolves, then clear it so the next
-  // round starts on a genuinely empty board.
-  useEffect(() => {
-    // remember rounds we watched while they were still open
-    if (!resolved && round > 0) seenUnresolved.current.add(round);
-  }, [resolved, round]);
-
-  useEffect(() => {
-    if (!resolved || winningCell < 0 || round <= 0) return;
-    // never light up a round that had already finished when we arrived
-    if (!seenUnresolved.current.has(round)) return;
-    if (winnerGlowRound.current === round) return;
-    winnerGlowRound.current = round;
-    setWinnerGlowing(true);
-    const t = setTimeout(() => setWinnerGlowing(false), WINNER_GLOW_MS);
-    return () => clearTimeout(t);
-  }, [resolved, winningCell, round]);
 
   // ─── Derived UI State ───
   // V5 round model — an ended round NEVER rolls forward on its own:
@@ -1003,7 +988,8 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
   };
 
   const getCellState = (idx) => {
-    if (resolved && winningCell === idx && winnerGlowing) return "winner"; // brief reveal, then the board clears
+    // the winning square is intentionally NOT shown on the board — the round
+    // history panel reports every winner, and a lit tile reads as a pick
     if (viewMyStakes[idx] > 0n) return "yours";
     if (viewClaimedCells.has(idx)) return "claimed";
     return "empty";
@@ -1594,7 +1580,7 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
               {CELL_LABELS.map((label, idx) => {
                 const state = getCellState(idx);
                 const isSelected = selectedCell === idx;
-                const isWinnerCell = resolved && winningCell === idx;
+                const isWinnerCell = false; // winner is never highlighted on the board
                 const isMiss = resolved && winningCell >= 0 && !isWinnerCell && (state === "claimed" || state === "yours");
                 const count = viewCellCounts[idx] || 0;
                 return (
