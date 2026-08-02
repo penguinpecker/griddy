@@ -16,7 +16,7 @@ Griddy only ever touches the native side.)
 
 ## How it works
 
-Rounds are **continuous**: the moment one 30-second betting window closes,
+Rounds are **continuous**: the moment one 60-second betting window closes,
 the next round is open — the first stake starts its clock. You stake any
 amount of USDC — from $0.0001 upward — on any cells you like. When a round
 closes, one cell wins, everyone on it splits the pot, and the reveal lands
@@ -93,7 +93,7 @@ contract balance covers every liability to the wei).
 
 | | Value | |
 |:---|:---|:---|
-| Round length | 30 s | the clock starts on the round's first stake; owner-tunable, 10 s – 1 h |
+| Round length | 60 s | windows sit on a fixed time grid, so the clock runs with zero players; owner-tunable, 10 s – 1 h |
 | Beacon gap | 4 s | delay before the pinned beacon exists; floor 3 s |
 | Reveal latency | ~4 s measured | round end → resolved on-chain (`scripts/measure-resolution.ts`) |
 | Minimum stake | $0.0001 | per *new* position; top-ups can be any size |

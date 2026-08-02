@@ -83,7 +83,7 @@ export default function HowToPlay() {
           <h1 className="htp-hero-title" style={S.heroTitle}>How to play</h1>
           <p style={S.heroDesc}>
             Pick a cell. Stake USDC. A drand randomness beacon selects the winning cell.
-            If it's yours, you take the pot. 30-second rounds, fully on-chain.
+            If it's yours, you take the pot. 60-second rounds, fully on-chain.
           </p>
         </div>
 
@@ -95,7 +95,7 @@ export default function HowToPlay() {
           </Step>
 
           <Step num="02" title="PICK YOUR CELL">
-            The grid is a <Hl>5×5 board with 25 cells</Hl>. Each round lasts <Hl>30 seconds</Hl>.
+            The grid is a <Hl>5×5 board with 25 cells</Hl>. Each round lasts <Hl>60 seconds</Hl>.
             Click any cell to select it, then confirm to lock your pick on-chain.
             Multiple players can pick the same cell.
           </Step>

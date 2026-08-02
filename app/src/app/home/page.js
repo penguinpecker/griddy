@@ -119,7 +119,7 @@ export default function HomePage() {
   const scanBg = `linear-gradient(180deg,transparent ${scanY-6}%,rgba(62,139,255,0.04) ${scanY-2}%,rgba(62,139,255,0.09) ${scanY}%,rgba(62,139,255,0.04) ${scanY+2}%,transparent ${scanY+6}%)`;
 
   const FEATURES = [
-    { t:"FAST ROUNDS", d:"30s games. In. Play. Win.", icon:(
+    { t:"FAST ROUNDS", d:"60s games. In. Play. Win.", icon:(
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={ACCENT} strokeWidth="1.7" strokeLinejoin="round"><path d="M13 2 4.5 13.5H11L9.5 22 19 10h-6.5L13 2z"/></svg>
     )},
     { t:"VERIFIED FAIR", d:"Provably fair. Always on-chain.", icon:(
@@ -164,7 +164,7 @@ export default function HomePage() {
             Pick a cell on the 5×5 grid. A drand randomness beacon — verified on-chain — selects the winner from occupied cells only. Winners share the pot — or keep everything if they picked alone.
           </div>
           <div style={{display:"flex", gap:8, flexWrap:"wrap", justifyContent:"center"}}>
-            {["PLAY ANY AMOUNT OF USDC","30S ROUNDS","DRAND BEACON EVERY ROUND","AUTO-PAY ON RESOLVE"].map(c=>(
+            {["PLAY ANY AMOUNT OF USDC","60S ROUNDS","DRAND BEACON EVERY ROUND","AUTO-PAY ON RESOLVE"].map(c=>(
               <div key={c} style={{fontFamily:MONO, fontSize:9, letterSpacing:1.5, padding:"5px 12px", borderRadius:999, background:"rgba(148,178,255,0.06)", border:"1px solid rgba(148,178,255,0.12)", color:MUTED}}>{c}</div>
             ))}
           </div>
@@ -317,7 +317,7 @@ export default function HomePage() {
           {[
             {n:"01",icon:"🔐",t:"LOGIN",d:"Sign in with email, Google, or wallet. Privy creates an embedded wallet instantly — no seed phrase needed."},
             {n:"02",icon:"⬡",t:"PICK A CELL",d:"Play any amount of USDC (min $0.10) on any squares. Multiple players can pick the same square — the prize splits pro-rata to what each put in."},
-            {n:"03",icon:"🎲",t:"DRAND BEACON",d:"When the 30s round ends, the drand beacon pinned at round start is emitted. Its BLS signature is verified on-chain and picks the winner from occupied cells only."},
+            {n:"03",icon:"🎲",t:"DRAND BEACON",d:"When the 60s round ends, the drand beacon pinned at round start is emitted. Its BLS signature is verified on-chain and picks the winner from occupied cells only."},
             {n:"04",icon:"💰",t:"GET PAID",d:"Winners are paid automatically during resolution. No claim step — USDC goes straight to your wallet, pro-rata to what you put on the winning square."},
           ].map(({n,icon,t,d})=>(
             <div key={n} style={{...CARD, borderRadius:18, padding:22, display:"flex", flexDirection:"column", gap:10}}>

@@ -108,7 +108,11 @@ const DRAWER_TABS = [
   { id: "rounds", label: "ROUND HISTORY" },
 ];
 const MIN_STAKE_DEFAULT = 100000000000000n; // $0.0001 — fallback only; chain minStakeWei is the source of truth
-const ROUND_DURATION = 30; // fallback window length — chain currentWindow() is the source of truth
+const ROUND_DURATION = 60; // fallback window length — chain currentWindow() is the source of truth
+// How long the winning square keeps its glow after a round resolves. Without a
+// limit it sits lit on the NEXT round's empty board and reads as a square the
+// player already picked.
+const WINNER_GLOW_MS = 9000;
 // V7 windows sit on a fixed time grid: [epoch + k·duration, epoch + (k+1)·duration).
 // MIN_BET_WINDOW mirrors the contract — a window with less than this left is
 // already closed to new bets, so the next stake (and the countdown) rolls into
@@ -257,6 +261,8 @@ export default function TheGrid() {
   const lastRoundRef = useRef(0);
   const resolverCalledForRound = useRef(0);
   const resolvedRef = useRef(false);
+  const [winnerGlowing, setWinnerGlowing] = useState(false);
+  const winnerGlowRound = useRef(0);
   const hasStakesRef = useRef(false);
 
   // ─── Refresh top of history table (picks up TX hash + drand round after resolution) ───
@@ -789,7 +795,13 @@ export default function TheGrid() {
         { sponsor: GAS_SPONSOR }
       );
       addFeed(`◈ Staking $${fmt(amountWei)} on ${CELL_LABELS[cellIndex]}...`);
-      await publicClient.waitForTransactionReceipt({ hash: receipt.hash, pollingInterval: 800 });
+      await publicClient.waitForTransactionReceipt({
+        hash: receipt.hash,
+        pollingInterval: 800,
+        // Without a bound this spins forever and the button sits on
+        // "CONFIRMING TX..." with no way to tell the player what went wrong.
+        timeout: 90_000,
+      });
       addFeed(`✓ $${fmt(amountWei)} on ${CELL_LABELS[cellIndex]}`);
       setSelectedCell(null);
       if (targetRoundId > round) {
@@ -878,6 +890,17 @@ export default function TheGrid() {
     setWithdrawing(false);
   };
 
+  // Light the winning square when a round resolves, then clear it so the next
+  // round starts on a genuinely empty board.
+  useEffect(() => {
+    if (!resolved || winningCell < 0 || round <= 0) return;
+    if (winnerGlowRound.current === round) return;
+    winnerGlowRound.current = round;
+    setWinnerGlowing(true);
+    const t = setTimeout(() => setWinnerGlowing(false), WINNER_GLOW_MS);
+    return () => clearTimeout(t);
+  }, [resolved, winningCell, round]);
+
   // ─── Derived UI State ───
   // V5 round model — an ended round NEVER rolls forward on its own:
   //   live      — now < endTime: countdown + staking into `round`
@@ -920,13 +943,13 @@ export default function TheGrid() {
     // a lie once the countdown above it is ticking.
     if (showWindowClock) return `ROUND ${displayRound} — BETTING OPEN`;
     if (roundState === "revealing") return `ROUND ${displayRound} — FIRST PLAY STARTS THE CLOCK`;
-    if (roundState === "idle") return `ROUND ${displayRound} — FIRST PLAY STARTS THE 30s CLOCK`;
+    if (roundState === "idle") return `ROUND ${displayRound} — FIRST PLAY STARTS THE CLOCK`;
     if (!ready || !authenticated) return `ROUND ${round} — LOGIN TO PLAY`;
     return `ROUND ${round} ACTIVE`;
   };
 
   const getCellState = (idx) => {
-    if (resolved && winningCell === idx) return "winner"; // keep the reveal glow until the next round opens
+    if (resolved && winningCell === idx && winnerGlowing) return "winner"; // brief reveal, then the board clears
     if (viewMyStakes[idx] > 0n) return "yours";
     if (viewClaimedCells.has(idx)) return "claimed";
     return "empty";
@@ -1489,7 +1512,7 @@ export default function TheGrid() {
               {roundState === "init" ? "INITIALIZING"
                 : showWindowClock ? "NEXT ROUND CLOSES"
                 : roundState === "revealing" ? `ROUND ${displayRound} — FIRST PLAY STARTS THE CLOCK`
-                : roundState === "idle" ? "FIRST PLAY STARTS THE 30s CLOCK"
+                : roundState === "idle" ? "FIRST PLAY STARTS THE CLOCK"
                 : "PICK A SQUARE"}
             </div>
             <div style={{ ...S.timerBig, color: timerColor }} className="grid-timer-big">
@@ -1630,6 +1653,11 @@ export default function TheGrid() {
               const nOn = focus != null ? (viewCellCounts[focus] || 0) : 0;
               const cellPot = focus != null ? (viewCellTotals[focus] || 0n) : 0n;
               const belowMin = stakeWei < minStake;
+              // Arc pays gas in USDC, so the stake AND its gas come out of the
+              // same balance — submitting more than that can never be mined.
+              const balWei = BigInt(ethBalance || 0);
+              const spendable = balWei > GAS_RESERVE ? balWei - GAS_RESERVE : 0n;
+              const tooBig = stakeWei > spendable;
               return (
                 <>
                   <div style={S.betHead}>
@@ -1694,11 +1722,11 @@ export default function TheGrid() {
                     <div style={S.betLocked}>INITIALIZING…</div>
                   ) : selectedCell != null ? (
                     <button
-                      style={{ ...S.betCta, opacity: belowMin ? 0.4 : 1, cursor: belowMin ? "default" : "pointer" }}
-                      disabled={belowMin}
+                      style={{ ...S.betCta, opacity: belowMin || tooBig ? 0.4 : 1, cursor: belowMin || tooBig ? "default" : "pointer" }}
+                      disabled={belowMin || tooBig}
                       onClick={() => stakeOnCell(selectedCell, stakeWei)}
                     >
-                      {belowMin ? `MIN $${fmt(minStake)}` : `PLAY $${stakeAmount} ON ${CELL_LABELS[selectedCell]} ◎`}
+                      {belowMin ? `MIN $${fmt(minStake)}` : tooBig ? `NOT ENOUGH — MAX $${fmt(spendable)}` : `PLAY $${stakeAmount} ON ${CELL_LABELS[selectedCell]} ◎`}
                     </button>
                   ) : (
                     <button style={{ ...S.betCta, opacity: 0.45, cursor: "default" }} disabled>PICK A SQUARE ◎</button>
