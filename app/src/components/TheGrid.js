@@ -48,6 +48,18 @@ const GRID_ABI = [
   { name: "getPlayerStakes", type: "function", stateMutability: "view",
     inputs: [{ name: "roundId", type: "uint256" }, { name: "player", type: "address" }],
     outputs: [{ name: "stakes", type: "uint256[25]" }] },
+  // V7: the betting window a stake sent right now lands in, derived purely
+  // from the clock — so the lobby countdown keeps running with zero players
+  // and no round materialised on-chain. Absent on V6 and earlier (read
+  // reverts); the UI falls back to the round-anchored clock.
+  { name: "currentWindow", type: "function", stateMutability: "view",
+    inputs: [],
+    outputs: [
+      { name: "windowStart", type: "uint64" },
+      { name: "windowEnd", type: "uint64" },
+      { name: "drandRound", type: "uint64" },
+      { name: "secondsLeft", type: "uint256" },
+    ] },
   { name: "minStakeWei", type: "function", stateMutability: "view",
     inputs: [], outputs: [{ name: "", type: "uint256" }] },
   { name: "protocolFeeBps", type: "function", stateMutability: "view",
@@ -96,7 +108,27 @@ const DRAWER_TABS = [
   { id: "rounds", label: "ROUND HISTORY" },
 ];
 const MIN_STAKE_DEFAULT = 100000000000000n; // $0.0001 — fallback only; chain minStakeWei is the source of truth
-const ROUND_DURATION = 30; // V5: fresh 30s window — opened by the first stake after expiry
+const ROUND_DURATION = 30; // fallback window length — chain currentWindow() is the source of truth
+// V7 windows sit on a fixed time grid: [epoch + k·duration, epoch + (k+1)·duration).
+// MIN_BET_WINDOW mirrors the contract — a window with less than this left is
+// already closed to new bets, so the next stake (and the countdown) rolls into
+// the following window. Kept in sync with GriddyV7.MIN_BET_WINDOW.
+const MIN_BET_WINDOW = 6;
+/**
+ * End of the window a stake sent at `nowSec` would land in, stepped locally
+ * off the last boundary the chain reported. Mirrors GriddyV7._bettableWindow
+ * exactly (whole seconds, same roll-forward rule), so the clock keeps ticking
+ * — and rolls over — between polls even when nothing is on-chain to poll.
+ */
+const bettableWindowEnd = (nowSec, anchor, dur) => {
+  if (!(dur > 0)) return 0;
+  const t = Math.floor(nowSec); // the contract only ever sees whole seconds
+  // `anchor` is a boundary of the same grid, so stepping either way from it
+  // lands on the true window: it sits ahead of `t` when the last read had
+  // already rolled forward, behind it after an idle stretch.
+  const wEnd = anchor + (Math.floor((t - anchor) / dur) + 1) * dur;
+  return wEnd - t < MIN_BET_WINDOW ? wEnd + dur : wEnd;
+};
 const GRID_SIZE = 5;
 const TOTAL_CELLS = GRID_SIZE * GRID_SIZE;
 // Clean-slate views for the not-yet-opened next round (V5: an ended round
@@ -179,6 +211,13 @@ export default function TheGrid() {
 
   // UI state
   const [smoothTime, setSmoothTime] = useState(0);
+  // Grid window (V7 currentWindow) — the round clock that keeps running with
+  // zero players. The anchor+length live in a ref so the 60fps loop can step
+  // the window locally between polls; windowSpan === 0 means the chain has no
+  // currentWindow (pre-V7), which drops the panel back to its V6 presentation.
+  const gridWindow = useRef(null); // { anchor, dur } — a known grid boundary + window length
+  const [windowSpan, setWindowSpan] = useState(0);
+  const [smoothWindowTime, setSmoothWindowTime] = useState(0);
   const [selectedCell, setSelectedCell] = useState(null);
   const lastTapRef = useRef({ cell: -1, time: 0 });
   const [hoveredCell, setHoveredCell] = useState(-1);
@@ -306,11 +345,18 @@ export default function TheGrid() {
   const address = wallet?.address;
 
   // ─── Smooth 60fps Timer ───
+  // Drives BOTH clocks: the live round's own countdown, and the grid-window
+  // countdown that runs whether or not anybody has staked.
   useEffect(() => {
     const tick = () => {
+      const nowSec = Date.now() / 1000;
       if (roundEnd > 0) {
-        const remaining = Math.max(0, roundEnd - Date.now() / 1000);
+        const remaining = Math.max(0, roundEnd - nowSec);
         setSmoothTime(remaining);
+      }
+      const g = gridWindow.current;
+      if (g) {
+        setSmoothWindowTime(Math.max(0, bettableWindowEnd(nowSec, g.anchor, g.dur) - nowSec));
       }
       animFrame.current = requestAnimationFrame(tick);
     };
@@ -358,6 +404,10 @@ export default function TheGrid() {
         publicClient.readContract({
           address: GRID_ADDR, abi: GRID_ABI, functionName: "getCellTotals", args: [roundId],
         }).catch(() => null),
+        // V7 only — reverts on older impls, which just leaves the window clock off
+        publicClient.readContract({
+          address: GRID_ADDR, abi: GRID_ABI, functionName: "currentWindow",
+        }).catch(() => null),
       ];
 
       // Player-specific calls (only if wallet connected)
@@ -374,7 +424,19 @@ export default function TheGrid() {
       }
 
       const results = await Promise.all(promises);
-      const [rd, counts, totals] = results;
+      const [rd, counts, totals, win] = results;
+
+      // Grid window (V7). The returned windowStart is always a boundary of the
+      // time grid, so it doubles as the anchor the 60fps loop steps from.
+      if (win) {
+        const wStart = Number(win[0]);
+        const wEnd = Number(win[1]);
+        const dur = wEnd - wStart;
+        if (dur > 0) {
+          gridWindow.current = { anchor: wStart, dur };
+          setWindowSpan((prev) => (prev === dur ? prev : dur));
+        }
+      }
 
       // Process round data. The round id and its timing MUST land together:
       // advancing `round` while a failed rounds() read leaves `roundEnd`
@@ -418,7 +480,7 @@ export default function TheGrid() {
 
       // Process player data
       if (address) {
-        const [, , , stakes, ethBal, owed] = results;
+        const [, , , , stakes, ethBal, owed] = results;
         if (stakes) setMyStakes(Array.from({ length: TOTAL_CELLS }, (_, i) => BigInt(stakes[i])));
         if (ethBal != null) setEthBalance(ethBal.toString());
         if (owed != null) setUnclaimed(BigInt(owed));
@@ -732,11 +794,14 @@ export default function TheGrid() {
       setSelectedCell(null);
       if (targetRoundId > round) {
         // Our stake opened the next round — optimistically start its clock;
-        // the poll confirms the real startTime/endTime
+        // the poll confirms the real startTime/endTime. On V7 the round ends
+        // on the grid boundary currentWindow() advertised, not now + 30s.
         const nowSec = Math.floor(Date.now() / 1000);
+        const g = gridWindow.current;
+        const predictedEnd = g ? bettableWindowEnd(nowSec, g.anchor, g.dur) : nowSec + ROUND_DURATION;
         setRound(targetRoundId);
         setRoundStart(nowSec);
-        setRoundEnd(nowSec + ROUND_DURATION);
+        setRoundEnd(predictedEnd);
       }
       pollState();
     } catch (e) {
@@ -819,7 +884,10 @@ export default function TheGrid() {
   //   revealing — ended with stakes, unresolved: the keeper reveals it ~8-12s
   //               later while betting is already open in round+1
   //   idle      — ended and empty (or already resolved): the next round waits
-  //               for its first stake, which starts a fresh 30s clock
+  //               for its first stake to materialise it
+  // V7: the betting WINDOW runs on a fixed time grid whatever the round state,
+  // so revealing/idle still have an honest countdown — the very window the next
+  // stake buys into — with nobody playing and nothing written on-chain.
   const roundState =
     round === 0 || roundEnd === 0 ? "init"
     : smoothTime > 0 ? "live"
@@ -837,11 +905,20 @@ export default function TheGrid() {
   const viewClaimedCells = isNextRoundView ? EMPTY_SET : claimedCells;
 
   const actualDuration = (roundEnd > 0 && roundStart > 0) ? (roundEnd - roundStart) : ROUND_DURATION;
-  const timerProgress = actualDuration > 0 ? smoothTime / actualDuration : 0;
+  // Countdown source: a materialised live round counts its own clock; anything
+  // else counts the grid window down. windowSpan === 0 (no V7 currentWindow)
+  // keeps the pre-V7 presentation, so the app degrades instead of lying.
+  const showWindowClock = windowSpan > 0 && isNextRoundView;
+  const countdown = showWindowClock ? smoothWindowTime : smoothTime;
+  const countdownSpan = showWindowClock ? windowSpan : actualDuration;
+  const timerProgress = countdownSpan > 0 ? Math.min(1, countdown / countdownSpan) : 0;
   const timerColor = roundState !== "live" ? "#3E8BFF" : smoothTime > 10 ? "#3E8BFF" : smoothTime > 5 ? "#6FB0FF" : "#FF6B5E";
 
   const getStatus = () => {
     if (roundState === "init") return "INITIALIZING...";
+    // The window is already running, so "first play starts the clock" would be
+    // a lie once the countdown above it is ticking.
+    if (showWindowClock) return `ROUND ${displayRound} — BETTING OPEN`;
     if (roundState === "revealing") return `ROUND ${displayRound} — FIRST PLAY STARTS THE CLOCK`;
     if (roundState === "idle") return `ROUND ${displayRound} — FIRST PLAY STARTS THE 30s CLOCK`;
     if (!ready || !authenticated) return `ROUND ${round} — LOGIN TO PLAY`;
@@ -910,7 +987,7 @@ export default function TheGrid() {
   const myTotalStaked = viewMyStakes.reduce((a, b) => a + b, 0n);
 
   // ─── Display-only derivations (presentation) ───
-  const tSecs = Math.max(0, Math.floor(smoothTime));
+  const tSecs = Math.max(0, Math.floor(countdown));
   const timerDisplay = `${String(Math.floor(tSecs / 60)).padStart(2, "0")}:${String(tSecs % 60).padStart(2, "0")}`;
   const cellsPicked = viewMyStakes.filter((v) => v > 0n).length;
   // The winner is drawn stake-weighted (target = vrf % totalStaked), so your
@@ -1389,38 +1466,35 @@ export default function TheGrid() {
           {/* Round tag + pot hero */}
           <div style={S.hero} className="grid-hero">
           <div style={S.roundTag}>ROUND {roundState === "init" ? "—" : displayRound}</div>
-          <div style={S.potLabel} className="grid-pot-label">✦ TOTAL POT ✦</div>
           <div style={S.potHero} className="grid-pot-hero">
             ${fmt(viewPot)}<span style={S.potUnit} className="grid-pot-unit"> USDC</span>
           </div>
-          {lastResult && (
-            <div style={S.lastPill} className="grid-last-pill">
-              ✦ R{lastResult.roundId} · {CELL_LABELS[lastResult.cell] || "?"} TOOK <span style={{ color: "#6FB0FF", fontWeight: 700 }}>${fmt(lastResult.pot)}</span>
-            </div>
-          )}
-          {/* V5 reveal chip: the previous round resolves in the background
-               while betting is already open here — flips to the winner */}
-          {roundState === "revealing" && (
+          {/* One line for the previous round: it is revealing, or it is done.
+               (Was three — a "TOTAL POT" label over an obvious pot, plus a
+               last-result pill and a winner chip that said the same thing.) */}
+          {roundState === "revealing" ? (
             <div style={S.revealChip} className="grid-reveal-chip">
-              <span style={S.revealDot} />REVEALING ROUND {round} ✦
+              <span style={S.revealDot} />REVEALING R{round}
             </div>
-          )}
-          {roundState === "idle" && resolved && winningCell >= 0 && (
-            <div style={{ ...S.revealChip, ...S.revealChipWin }} className="grid-reveal-chip">
-              ✦ ROUND {round} WINNER — {CELL_LABELS[winningCell] || winningCell}
+          ) : lastResult ? (
+            <div style={S.lastPill} className="grid-last-pill">
+              R{lastResult.roundId} · {CELL_LABELS[lastResult.cell] || "?"} took <span style={{ color: "#6FB0FF", fontWeight: 700 }}>${fmt(lastResult.pot)}</span>
             </div>
-          )}
+          ) : null}
           </div>
 
           {/* Countdown */}
           <div style={S.timerPanel} className="grid-timer-panel">
             <div style={S.timerLabel}>
               {roundState === "init" ? "INITIALIZING"
+                : showWindowClock ? "NEXT ROUND CLOSES"
                 : roundState === "revealing" ? `ROUND ${displayRound} — FIRST PLAY STARTS THE CLOCK`
                 : roundState === "idle" ? "FIRST PLAY STARTS THE 30s CLOCK"
                 : "PICK A SQUARE"}
             </div>
-            <div style={{ ...S.timerBig, color: timerColor }} className="grid-timer-big">{isNextRoundView ? "READY" : timerDisplay}</div>
+            <div style={{ ...S.timerBig, color: timerColor }} className="grid-timer-big">
+              {isNextRoundView && !showWindowClock ? "READY" : timerDisplay}
+            </div>
             <div style={S.timerBarBg} className="grid-timer-bar">
               <div style={{
                 ...S.timerBarFill,

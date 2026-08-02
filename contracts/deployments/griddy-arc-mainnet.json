@@ -6,7 +6,7 @@
   "feeRecipient": "0x52c59BC217fD0C0b2157f1B2Da1a12635E19Da4c",
   "drandBeacon": "0xC5c53BB4A93bCe76b99c726FFA1173Be31f14d8d",
   "griddy": "0xfa29a5a324149a60086B3aeD20cBF42Bd761d5A1",
-  "griddyImpl": "0x3a9D867596E286B080C5cc1c2Dbdf753c27412bF",
+  "griddyImpl": "0x96440c615317114bF5e8135438f09B16500E37dE",
   "params": {
     "minStakeWei": "100000000000000",
     "resolverTipWei": "30000000000000",
@@ -20,6 +20,7 @@
     "genesis": 1727521075,
     "period": 3
   },
-  "version": "V6",
-  "upgradedAt": "2026-08-01T14:24:11.298Z"
+  "version": "V7",
+  "upgradedAt": "2026-08-02T00:50:58.365Z",
+  "roundEpoch": "1785631854"
 }
