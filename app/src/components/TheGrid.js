@@ -114,10 +114,10 @@ const ROUND_DURATION = 60; // fallback window length — chain currentWindow() i
 // already closed to new bets, so the next stake (and the countdown) rolls into
 // the following window. Kept in sync with GriddyV7.MIN_BET_WINDOW.
 const MIN_BET_WINDOW = 6;
-// How long the settled board is held up after a resolution lands: winning cell
-// lit, every other staked cell crossed out. Long enough to read, short enough
-// that it is gone well before the next 60s window closes.
-const REVEAL_MS = 5000;
+// How long the winner cover sits over the whole board after a resolution
+// lands. Long enough to read, short enough to clear well inside the next
+// 60s window.
+const REVEAL_MS = 3000;
 /**
  * End of the window a stake sent at `nowSec` would land in, stepped locally
  * off the last boundary the chain reported. Mirrors GriddyV7._bettableWindow
@@ -1150,16 +1150,18 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
       addFeed(`✓ $${fmt(amountWei)} on ${CELL_LABELS[cellIndex]}`);
       setSelectedCell(null);
       if (targetRoundId > round) {
-        // Our stake opened the next round — optimistically start its clock;
-        // the poll confirms the real startTime/endTime. From V8 a new round
-        // always runs a FULL roundDuration from the moment it opens, so the
-        // prediction is now + duration rather than the grid boundary (which
-        // would under-count the clock for one poll on the opening stake).
+        // Our stake opened the next round — optimistically start its clock so
+        // the board switches over before the poll lands. Under V9 the round
+        // the contract opens is a GRID SLOT, so predict the same boundary
+        // bettableWindowEnd gives the lobby clock. Predicting now + duration
+        // (the V8 rule) made the timer jump to a full minute for one poll and
+        // then snap back — visible on every opening stake.
         const nowSec = Math.floor(Date.now() / 1000);
         const g = gridWindow.current;
-        const predictedEnd = nowSec + (g?.dur || ROUND_DURATION);
+        const dur = g?.dur || ROUND_DURATION;
+        const predictedEnd = g ? bettableWindowEnd(nowSec, g.anchor, g.dur) : nowSec + dur;
         setRound(targetRoundId);
-        setRoundStart(nowSec);
+        setRoundStart(predictedEnd - dur);
         setRoundEnd(predictedEnd);
       }
       pollState();
@@ -1301,10 +1303,9 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
   };
 
   const getCellState = (idx) => {
-    // The winner is shown ONLY during the post-resolution reveal, over the very
-    // board that produced it. Outside that window a lit tile would read as a
-    // pick rather than a result.
-    if (revealActive && idx === winningCell) return "winner";
+    // The winning square is deliberately NOT lit on the board — the result is
+    // announced by a cover over the whole grid instead, so a bright tile can
+    // never be mistaken for a pick.
     if (viewMyStakes[idx] > 0n) return "yours";
     if (viewClaimedCells.has(idx)) return "claimed";
     return "empty";
@@ -1899,6 +1900,25 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
             {/* Resolving: the board is settling, so dim the whole panel and
                  hold it until the round lands. Clears the moment roundState
                  leaves "revealing". */}
+            {/* Result cover: the winner is announced across the WHOLE board for
+                 REVEAL_MS, never by lighting one tile. Gated on revealActive,
+                 which only arms for a round watched from open to settled. */}
+            {revealActive && (
+              <div style={S.winnerVeil} className="grid-resolve-veil">
+                <span style={S.winnerVeilTag}>ROUND {round} — WINNING SQUARE</span>
+                <span style={S.winnerVeilCell}>{CELL_LABELS[winningCell]}</span>
+                <span style={S.winnerVeilLine}>
+                  {/* payoutFor defaults to adding the pending input, so pass 0n
+                       — this is a settled result, not a quote. */}
+                  {viewMyStakes[winningCell] > 0n
+                    ? `YOU WIN $${fmt(payoutFor(winningCell, 0n))}`
+                    : myTotalStaked > 0n
+                      ? "NOT YOUR SQUARE THIS ROUND"
+                      : `POT $${fmt(viewPot)}`}
+                </span>
+              </div>
+            )}
+
             {roundState === "revealing" && !revealActive && (
               <div style={S.resolveVeil} className="grid-resolve-veil">
                 <span style={S.resolveSpinner}><span style={S.resolveSpinnerInner} /></span>
@@ -1913,12 +1933,6 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
               {CELL_LABELS.map((label, idx) => {
                 const state = getCellState(idx);
                 const isSelected = selectedCell === idx;
-                const isWinnerCell = state === "winner";
-                // Every OTHER cell dims during the reveal; the ones that were
-                // actually staked get crossed out, so the loss is explicit
-                // rather than merely unlit.
-                const isMiss = revealActive && !isWinnerCell && (state === "claimed" || state === "yours");
-                const isDimmed = revealActive && !isWinnerCell;
                 const count = viewCellCounts[idx] || 0;
                 // Everyone standing on this square, packed from the top-left.
                 // Only as many as actually fit are drawn; the rest roll into a
@@ -1933,11 +1947,8 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
                       ...S.cell,
                       ...(state === "claimed" ? S.cellClaimed : {}),
                       ...(state === "yours" ? S.cellYours : {}),
-                      ...(hoveredCell === idx && !isSelected && state !== "winner" && state !== "yours" ? S.cellHover : {}),
+                      ...(hoveredCell === idx && !isSelected && state !== "yours" ? S.cellHover : {}),
                       ...(isSelected ? S.cellSelected : {}),
-                      ...(state === "winner" ? S.cellWinner : {}),
-                      ...(isMiss ? S.cellMiss : {}),
-                      ...(isDimmed ? S.cellDimmed : {}),
                       // avatars own the top of a busy tile, so the figures
                       // settle along the bottom instead of underneath them
                       ...(players.length > 0 ? { alignItems: "flex-end", paddingBottom: "6%" } : {}),
@@ -1966,7 +1977,7 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
                     onDoubleClick={() => { if (canClaim(idx) && !claiming && stakeWei >= minStake) stakeOnCell(idx, stakeWei); }}
                   >
                     <span style={S.cellLabel}>{label}</span>
-                    {count > 0 && state !== "winner" && state !== "yours" && !isMiss && (
+                    {count > 0 && state !== "yours" && (
                       <span style={S.cellCount}>{count}</span>
                     )}
                     {players.length > 0 && (
@@ -1991,11 +2002,7 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
                       </span>
                     )}
                     <span style={S.cellCenter}>
-                      {state === "winner" ? (
-                        <span style={{ fontSize: 26, animation: "winnerPop 0.6s ease-out" }}>✦</span>
-                      ) : isMiss ? (
-                        <span style={{ fontSize: 20, fontWeight: 700, color: "#C3D3F5" }}>✕</span>
-                      ) : state === "yours" ? (
+                      {state === "yours" ? (
                         // your own avatar now rides in the packed stack above,
                         // so the centre carries just the figures
                         <span style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
@@ -2751,18 +2758,6 @@ const S = {
     color: "#071230",
     boxShadow: "0 5px 14px rgba(0,0,0,0.4), 0 0 14px rgba(62,139,255,0.4)",
   },
-  cellWinner: {
-    background: "linear-gradient(160deg,#6FB0FF,#2E7BFF)",
-    border: "1px solid rgba(255,255,255,0.35)",
-    color: "#071230",
-    transform: "scale(1.06)",
-    boxShadow: "0 0 28px rgba(62,139,255,0.75)",
-    // Deliberately NO `animation` here. Setting one would replace the cell's
-    // one-shot entry animation, and removing this style at the end of the
-    // reveal would then restart it — the winning tile visibly fading back in
-    // after the round is over. The static glow reads just as clearly.
-    zIndex: 2,
-  },
   cellSelected: {
     background: "linear-gradient(160deg,#5FA6FF,#2E7BFF)",
     border: "1px solid rgba(255,255,255,0.3)",
@@ -2771,22 +2766,33 @@ const S = {
     boxShadow: "0 0 18px rgba(62,139,255,0.55)",
     zIndex: 2,
   },
-  cellMiss: {
-    background: "linear-gradient(145deg,#0E1730,#0A1226)",
-    border: "1px solid rgba(150,180,255,0.06)",
-    boxShadow: "none",
-  },
   winnerChip: {
     background: "rgba(62,139,255,0.16)",
     border: "1px solid rgba(111,176,255,0.55)",
     color: "#9CC6FF",
   },
-  // Applies to every non-winning cell for the length of the reveal, so the one
-  // lit square reads instantly against a receded board.
-  cellDimmed: {
-    opacity: 0.32,
-    filter: "saturate(0.5)",
-    transform: "none",
+  // The result cover — sits over the entire board for REVEAL_MS. Matches
+  // resolveVeil's geometry so the board goes spinner -> result in place.
+  winnerVeil: {
+    position: "absolute", inset: 0, zIndex: 20, borderRadius: 22,
+    background: "rgba(6,11,28,0.88)", backdropFilter: "blur(3px)",
+    display: "flex", flexDirection: "column", alignItems: "center",
+    justifyContent: "center", gap: 6, cursor: "default",
+    animation: "fadeIn 0.2s ease",
+  },
+  winnerVeilTag: {
+    fontSize: 10, letterSpacing: 3, fontWeight: 700, color: "#55688F",
+    fontFamily: "'JetBrains Mono', monospace", textAlign: "center", padding: "0 12px",
+  },
+  winnerVeilCell: {
+    fontFamily: "'Baloo 2', sans-serif", fontWeight: 800,
+    fontSize: "clamp(56px, 18vw, 104px)", lineHeight: 1, color: "#5FA6FF",
+    textShadow: "0 0 36px rgba(62,139,255,0.55)",
+    animation: "winnerPop 0.5s ease-out",
+  },
+  winnerVeilLine: {
+    fontSize: 11, letterSpacing: 2, fontWeight: 700, color: "#9CC6FF",
+    fontFamily: "'JetBrains Mono', monospace", textAlign: "center", padding: "0 12px",
   },
   cellScanSweep: {
     background: "linear-gradient(160deg,#5FA6FF,#2E7BFF)",
