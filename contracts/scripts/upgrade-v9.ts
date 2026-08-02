@@ -48,24 +48,24 @@ async function main() {
   // No call: V9 appends no storage, so re-running an initializer would only
   // risk re-phasing a grid that is already anchored.
   const v9 = await upgrades.upgradeProxy(proxy, V9);
-  await v8.waitForDeployment();
+  await v9.waitForDeployment();
   const impl = await upgrades.erc1967.getImplementationAddress(proxy);
   console.log(`  upgraded. new impl: ${impl}`);
 
   const after = {
-    roundId: await v8.currentRoundId(),
-    fees: await v8.accumulatedFees(),
-    unresolved: await v8.totalUnresolvedStakes(),
-    owner: await v8.owner(),
-    minStake: await v8.minStakeWei(),
-    duration: await v8.roundDuration(),
-    gap: await v8.beaconGap(),
-    feeBps: await v8.protocolFeeBps(),
-    tip: await v8.resolverTipWei(),
-    epoch: await v8.roundEpoch(),
+    roundId: await v9.currentRoundId(),
+    fees: await v9.accumulatedFees(),
+    unresolved: await v9.totalUnresolvedStakes(),
+    owner: await v9.owner(),
+    minStake: await v9.minStakeWei(),
+    duration: await v9.roundDuration(),
+    gap: await v9.beaconGap(),
+    feeBps: await v9.protocolFeeBps(),
+    tip: await v9.resolverTipWei(),
+    epoch: await v9.roundEpoch(),
     balance: await ethers.provider.getBalance(proxy),
   };
-  const w = await v8.currentWindow();
+  const w = await v9.currentWindow();
   console.log(`  after:  round=${after.roundId} fees=${ethers.formatEther(after.fees)} unresolved=${ethers.formatEther(after.unresolved)} owner=${after.owner}`);
   console.log(`          minStakeWei=${after.minStake} roundDuration=${after.duration}s beaconGap=${after.gap}s balance=${ethers.formatEther(after.balance)}`);
   console.log(`          roundEpoch=${after.epoch} (${new Date(Number(after.epoch) * 1000).toISOString()})`);
@@ -75,8 +75,8 @@ async function main() {
   // legitimately stake or resolve in the blocks the upgrade straddles, which
   // moves roundId / fees / unresolved / balance without anything being lost.
   const reserved = after.unresolved
-    + (await v8.pendingRefunds())
-    + (await v8.pendingWithdrawals())
+    + (await v9.pendingRefunds())
+    + (await v9.pendingWithdrawals())
     + after.fees;
   if (after.unresolved !== state.unresolved || after.balance !== state.balance) {
     console.log(`  note: live play moved unresolved ${state.unresolved} -> ${after.unresolved}, balance ${state.balance} -> ${after.balance}`);

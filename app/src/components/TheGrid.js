@@ -2342,6 +2342,27 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
           /* Board is width-led on phones so every key stays a ≥44px tap target;
              the main column scrolls when the stack can't fit one screen. */
           .grid-root { --gsize: clamp(320px, calc(100dvh - 396px), 560px); }
+          /* Phones stack board + entry controls + history into ONE column, which
+             is taller than the viewport by design. The desktop one-screen lock
+             (root pinned to 100dvh, overflow hidden) must therefore come off
+             here: with it on, the grid rows get squeezed into the leftover
+             height and .grid-bet-col collapses to a few pixels, whereupon its
+             chips, input and CTA — none of which shrink — paint straight over
+             the board and the history table. Content-size every wrapper in the
+             chain and let the document itself scroll. */
+          .grid-root {
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+          }
+          .grid-main {
+            overflow: visible !important;
+            align-items: flex-start !important;
+            flex: 0 0 auto !important;
+          }
+          .grid-stage { flex: 0 0 auto !important; min-height: 0 !important; }
+          .grid-cols { flex: 0 0 auto !important; align-items: start !important; }
+          .grid-wrap { flex: 0 0 auto !important; }
           /* Entry controls first, history after — the CTA stays reachable */
           .grid-hist-below { order: 9 !important; }
           .grid-hist-slot > .grid-table-panel { height: auto !important; }
