@@ -68,6 +68,21 @@ async function main() {
     const paidOk = dust >= 0n && dust < BigInt(paidEvs.length + 1);
 
     totalPaid += paidSum;
+    // Distinguish "this round's events predate the scanned range" from a real
+    // accounting mismatch — otherwise an old round looks like a failure and
+    // the audit cries wolf. Chain state is still checked below.
+    const outsideRange = stakedEvs.length === 0 && r.totalStakers > 0n;
+    if (outsideRange) {
+      const owedOk = r.distributable === r.totalStaked - fee;
+      console.log(
+        `~ round ${id}: events predate the ${LOOKBACK}-block scan window — ` +
+        `chain state ${owedOk ? "consistent" : "INCONSISTENT"}: pot $${ethers.formatEther(r.totalStaked)}, ` +
+        `prize $${ethers.formatEther(r.distributable)}, ${r.totalStakers} staker(s) ` +
+        `(raise LOOKBACK_BLOCKS to verify its events)`
+      );
+      if (!owedOk) process.exitCode = 1;
+      continue;
+    }
     const flag = potOk && prizeOk && proRataOk && paidOk ? "✓" : "✗ MISMATCH";
     console.log(
       `${flag} round ${id}: pot $${ethers.formatEther(r.totalStaked)} (${stakedEvs.length} stakes) → ` +
