@@ -250,7 +250,12 @@ const MIN_TIP = 10_000_000_000n; // 10 gwei
 // just a ceiling: EIP-1559 makes the sender reserve gasLimit * maxFeePerGas
 // up front, so a blanket 12M limit priced a resolve at >1 USDC on mainnet
 // and bounced it for insufficient funds. Reserve what the round can use.
-const RESOLVE_BASE_GAS = 500_000n;
+// V10 made resolveRound also OPEN the next round (one cold struct slot, a
+// currentRoundId bump and an event, ~36k), which eats into this headroom.
+// Raised so the margin over the measured ~377k resolve is unchanged. The limit
+// is a ceiling, not a charge — unused gas is refunded, so over-reserving costs
+// only the EIP-1559 up-front reservation, never real money.
+const RESOLVE_BASE_GAS = 560_000n;
 const GAS_PER_WINNER = 60_000n;
 const MAX_WINNERS = 100n; // contract's MAX_STAKERS_PER_CELL
 function resolveGasLimit(totalStakers = 0n) {

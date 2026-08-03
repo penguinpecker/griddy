@@ -60,11 +60,6 @@ const GRID_ABI = [
       { name: "drandRound", type: "uint64" },
       { name: "secondsLeft", type: "uint256" },
     ] },
-  // V10: dead seconds between one round's betting close and the next one's
-  // open, reserved for resolution + the winner reveal. Absent pre-V10 (read
-  // reverts), which reads as gap 0 — i.e. the old back-to-back behaviour.
-  { name: "revealGap", type: "function", stateMutability: "view",
-    inputs: [], outputs: [{ name: "", type: "uint256" }] },
   { name: "minStakeWei", type: "function", stateMutability: "view",
     inputs: [], outputs: [{ name: "", type: "uint256" }] },
   { name: "protocolFeeBps", type: "function", stateMutability: "view",
@@ -322,7 +317,6 @@ export default function TheGrid() {
   const walletDropdownRef = useRef(null);
   const [lastResult, setLastResult] = useState(null); // { roundId, cell, players, pot, txHash }
   const feeConfig = useRef({ feeBps: 1000n, resolverTipWei: 30000000000000n, minStakeWei: MIN_STAKE_DEFAULT }); // defaults, updated from chain
-  const revealGapRef = useRef(0); // V10 intermission length, 0 pre-V10
   const [roundHistory, setRoundHistory] = useState([]); // array of ALL loaded past results, newest first
   const [moneyFlow, setMoneyFlow] = useState(false);
   const [gridFlash, setGridFlash] = useState(false);
@@ -400,12 +394,8 @@ export default function TheGrid() {
       publicClient.readContract({ address: GRID_ADDR, abi: GRID_ABI, functionName: "protocolFeeBps" }).catch(() => 1000n),
       publicClient.readContract({ address: GRID_ADDR, abi: GRID_ABI, functionName: "resolverTipWei" }).catch(() => 30000000000000n),
       publicClient.readContract({ address: GRID_ADDR, abi: GRID_ABI, functionName: "minStakeWei" }).catch(() => MIN_STAKE_DEFAULT),
-      // reverts pre-V10 -> 0, i.e. no intermission, the old back-to-back grid
-      publicClient.readContract({ address: GRID_ADDR, abi: GRID_ABI, functionName: "revealGap" }).catch(() => 0n),
-    ]).then(([bps, tip, minS, gap]) => {
+    ]).then(([bps, tip, minS]) => {
       feeConfig.current = { feeBps: BigInt(bps), resolverTipWei: BigInt(tip), minStakeWei: BigInt(minS) };
-      revealGapRef.current = Number(gap);
-      if (gridWindow.current) gridWindow.current.gap = Number(gap);
     });
   }, []);
 
@@ -565,9 +555,9 @@ export default function TheGrid() {
         const wEnd = Number(win[1]);
         const dur = wEnd - wStart;
         if (dur > 0) {
-          // gap is read separately (config poll); default 0 keeps pre-V10
-          // chains on the old back-to-back cycle.
-          gridWindow.current = { anchor: wStart, dur, gap: revealGapRef.current };
+          // anchor is the LIVE round's own start when one is open — under V10
+          // that is the resolution instant, deliberately off-grid.
+          gridWindow.current = { anchor: wStart, dur, gap: 0 };
           setWindowSpan((prev) => (prev === dur ? prev : dur));
         }
       }
@@ -1014,6 +1004,12 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
   useEffect(() => {
     if (round > 0 && round !== lastRoundRef.current) {
       const prevRound = lastRoundRef.current;
+      // Snapshot what the OUTGOING round held, before the resets below wipe it.
+      // The async read closes over these, so the result cover can report the
+      // player's own position in the round that just settled rather than the
+      // fresh one that replaced it.
+      const snapMyStakes = myStakes;
+      const snapPot = potSize;
 
       // Fetch previous round data from contract (don't rely on stale state)
       if (prevRound > 0) {
@@ -1043,6 +1039,20 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
             setMoneyFlow(true);
             setTimeout(() => setMoneyFlow(false), 2500);
             setHistoryPage(0);
+            // V10: resolution advances the round in the same transaction, so
+            // THIS is the moment the winner becomes known to the client. Pay
+            // out of the round's own on-chain figures (winnerTotal /
+            // distributable) rather than recomputing the fee locally.
+            const winnerTotal = rd[8];
+            const distributable = rd[9];
+            const mine = snapMyStakes[cell] || 0n;
+            setReveal({
+              roundId: prevRound,
+              cell,
+              mine,
+              payout: winnerTotal > 0n ? (distributable * mine) / winnerTotal : 0n,
+              pot,
+            });
           } else if (players > 0) {
             // V5: normal — the keeper reveals an ended round ~8-12s after
             // expiry while betting continues here; the history refresh picks
@@ -1067,10 +1077,12 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
       setWinningCell(-1);
       setResolved(false);
       resolvedRef.current = false;
-      // The board behind the reveal has just been wiped, so the reveal has to
-      // go with it — a winning tile lit over an empty grid is exactly the
-      // "pre-selected" artefact this feature must never reproduce.
-      setReveal(null);
+      // NOT cleared here any more: under V10 the round advances as part of the
+      // resolution, so the cover for the round that just settled is set in the
+      // branch above and has to outlive this reset. It is safe over a wiped
+      // board because it is an opaque full-grid cover carrying its own
+      // numbers — nothing is read from the tiles underneath.
+      void snapPot;
     }
   }, [round]);
 
@@ -1088,11 +1100,21 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
       setLastResult(result);
       setMoneyFlow(true);
       setTimeout(() => setMoneyFlow(false), 2500);
-      // Hold the settled board up for a beat before the next round's slate —
-      // but only for a round we watched go from open to settled.
+      // Pre-V10 path: the round id does NOT advance on resolution, so the
+      // winner surfaces here instead. Still armed by having watched the round
+      // unresolved, so landing on a long-settled round never replays it.
       if (revealArmedRound.current === round) {
-        setReveal({ roundId: round, cell: winningCell });
+        const winnerTotal = viewCellTotals[winningCell] || 0n;
+        const mine = viewMyStakes[winningCell] || 0n;
+        setReveal({
+          roundId: round,
+          cell: winningCell,
+          mine,
+          payout: payoutFor(winningCell, 0n) || 0n,
+          pot: potSize,
+        });
         revealArmedRound.current = -1;
+        void winnerTotal;
       }
       // Upsert: update existing entry or prepend new one
       setRoundHistory(prev => {
@@ -1292,12 +1314,14 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
     : smoothTime > 0 ? "live"
     : (!resolved && (activePlayers > 0 || claimedCells.size > 0)) ? "revealing"
     : "idle";
-  // While the reveal is up, keep the SETTLED round on the board — its stakes,
-  // its pot, its winner — instead of switching to the next round's blank slate.
-  // Gated on reveal.roundId === round so it can only ever decorate the board it
-  // was computed from.
-  const revealActive = reveal != null && reveal.roundId === round && winningCell >= 0 && resolved;
-  const isNextRoundView = !revealActive && (roundState === "revealing" || roundState === "idle");
+  // The result cover is opaque and carries its own numbers (see `reveal`), so
+  // it does not care what the board underneath is showing. That matters under
+  // V10: resolution bumps currentRoundId in the SAME transaction, so by the
+  // time the client sees a winner the board has already moved to the next
+  // round. Tying the cover to the current round — as it was — meant it could
+  // never fire at all.
+  const revealActive = reveal != null;
+  const isNextRoundView = roundState === "revealing" || roundState === "idle";
   const displayRound = isNextRoundView ? round + 1 : round;
   // While showing the not-yet-opened next round, present a clean slate — the
   // polled state still holds the previous round until the roll lands on-chain
@@ -1320,7 +1344,12 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
   // the two belong together. The grid clock itself never stops (it cannot; it
   // is the chain's), it is simply not the thing being displayed for those 3s,
   // and it reappears at its true remaining value rather than a fresh 60.
-  const showWindowClock = windowSpan > 0 && isNextRoundView;
+  // Between a round closing and its resolution landing there is no next round
+  // yet — under V10 resolution is what opens it. Showing the grid's fallback
+  // countdown here would display a clock that jumps the moment resolution
+  // creates the real round, so the panel says RESOLVING instead.
+  const resolving = roundState === "revealing";
+  const showWindowClock = windowSpan > 0 && isNextRoundView && !resolving;
   // V10: betting is shut for these seconds while the round resolves and its
   // winner is shown. The next round's clock has NOT started — so the panel
   // counts down to the open, and the round clock afterwards begins at a full
@@ -1329,15 +1358,17 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
   const opensInText = `${String(Math.floor(Math.max(0, windowOpensIn) / 60)).padStart(2, "0")}:${String(Math.floor(Math.max(0, windowOpensIn)) % 60).padStart(2, "0")}`;
   const countdown = showWindowClock ? smoothWindowTime : smoothTime;
   const countdownSpan = showWindowClock ? windowSpan : actualDuration;
-  // Bar empties for the result hold — the round it belonged to is over.
-  const timerProgress = revealActive ? 0
+  // Bar empties while the round settles and while its result is held up — the
+  // round it belonged to is over and the next one has not opened.
+  const timerProgress = (revealActive || resolving) ? 0
     : countdownSpan > 0 ? Math.min(1, countdown / countdownSpan) : 0;
   const timerColor = roundState !== "live" ? "#3E8BFF" : smoothTime > 10 ? "#3E8BFF" : smoothTime > 5 ? "#6FB0FF" : "#FF6B5E";
 
   const getStatus = () => {
     if (roundState === "init") return "INITIALIZING...";
-    if (revealActive) return `ROUND ${round} — ${CELL_LABELS[winningCell]} WINS`;
-    // V10: betting really is shut during the intermission — a stake sent now
+    if (revealActive) return `ROUND ${reveal.roundId} — ${CELL_LABELS[reveal.cell]} WINS`;
+    if (resolving) return `ROUND ${round} — DRAWING THE WINNER`;
+    // Betting is genuinely shut for the tail of a window — a stake sent now
     // buys into the round that opens next, so say so rather than "open".
     if (inIntermission) return `ROUND ${displayRound} — OPENS IN ${Math.ceil(windowOpensIn)}S`;
     // The clock is a pure function of the grid, so betting is open in every
@@ -1902,7 +1933,7 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
                round has landed, whatever the polled roundState still says. */}
           {revealActive ? (
             <div style={{ ...S.revealChip, ...S.winnerChip }} className="grid-reveal-chip">
-              R{round} — {CELL_LABELS[winningCell]} WINS
+              R{reveal.roundId} — {CELL_LABELS[reveal.cell]} WINS
             </div>
           ) : roundState === "revealing" ? (
             <div style={S.revealChip} className="grid-reveal-chip">
@@ -1915,14 +1946,16 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
           <div style={S.timerPanel} className="grid-timer-panel">
             <div style={S.timerLabel}>
               {roundState === "init" ? "INITIALIZING"
-                : revealActive ? `ROUND ${round} RESULT`
+                : revealActive ? `ROUND ${reveal.roundId} RESULT`
+                : resolving ? `ROUND ${round} RESOLVING`
                 : inIntermission ? "NEXT ROUND OPENS IN"
                 : showWindowClock ? "NEXT ROUND CLOSES"
                 : isNextRoundView ? "BETTING OPEN"
                 : "PICK A SQUARE"}
             </div>
             <div style={{ ...S.timerBig, color: timerColor }} className="grid-timer-big">
-              {revealActive ? CELL_LABELS[winningCell]
+              {revealActive ? CELL_LABELS[reveal.cell]
+                : resolving ? "—"
                 : inIntermission ? opensInText
                 : isNextRoundView && !showWindowClock ? "READY"
                 : timerDisplay}
@@ -1957,16 +1990,15 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
                  which only arms for a round watched from open to settled. */}
             {revealActive && (
               <div style={S.winnerVeil} className="grid-resolve-veil">
-                <span style={S.winnerVeilTag}>ROUND {round} — WINNING SQUARE</span>
-                <span style={S.winnerVeilCell}>{CELL_LABELS[winningCell]}</span>
+                <span style={S.winnerVeilTag}>ROUND {reveal.roundId} — WINNING SQUARE</span>
+                <span style={S.winnerVeilCell}>{CELL_LABELS[reveal.cell]}</span>
                 <span style={S.winnerVeilLine}>
-                  {/* payoutFor defaults to adding the pending input, so pass 0n
-                       — this is a settled result, not a quote. */}
-                  {viewMyStakes[winningCell] > 0n
-                    ? `YOU WIN $${fmt(payoutFor(winningCell, 0n))}`
-                    : myTotalStaked > 0n
-                      ? "NOT YOUR SQUARE THIS ROUND"
-                      : `POT $${fmt(viewPot)}`}
+                  {/* every figure comes from the settled round's own snapshot,
+                       never from the board underneath — which by now may
+                       already belong to the next round */}
+                  {reveal.mine > 0n
+                    ? `YOU WIN $${fmt(reveal.payout)}`
+                    : `POT $${fmt(reveal.pot)}`}
                 </span>
               </div>
             )}

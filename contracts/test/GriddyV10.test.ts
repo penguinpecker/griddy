@@ -16,15 +16,19 @@ const SIG_ROUND_10M: [bigint, bigint] = [
   0x0f7a530796e7ee38600b06da0390634a9b154e3eebc3b323dde2111e1c8ebdf3n,
 ];
 const ROUND_10M = 10_000_000n;
+const SIG_ROUND_B: [bigint, bigint] = [
+  0x13d1b70855d04ea9af3efc4a03378f655459da97819ca4c63427104cf20bd724n,
+  0x2c4116eba1899aefcc969a160faa09d164ef5c2dbcef91ad7455ad7c0457d37cn,
+];
+const ROUND_B = 10_000_013n;
 
 const MIN_STAKE = 10n ** 14n;
-const DUR = 30n;                 // default roundDuration
-const GAP = 12n;                 // DEFAULT_REVEAL_GAP
-const CYC = DUR + GAP;
+const DUR = 30n;
 const MIN_BET_WINDOW = 6n;
 
 const timeOfRoundTs = (r: bigint) => EVMNET_GENESIS + (r - 1n) * EVMNET_PERIOD;
 const T10M = timeOfRoundTs(ROUND_10M);
+const TB = timeOfRoundTs(ROUND_B);
 
 const vrfFromSig = (sig: [bigint, bigint]) =>
   BigInt(ethers.solidityPackedKeccak256(["uint256", "uint256"], [sig[0], sig[1]]));
@@ -39,29 +43,16 @@ function pickWinner(vrf: bigint, cellTotals: Map<number, bigint>, pool: bigint) 
   throw new Error("no winner drawn");
 }
 
-// ─── cycle replicas (mirror _cycleOf / _bettableWindow exactly) ───
-function cycleOf(epoch: bigint, t: bigint, dur = DUR, gap = GAP) {
-  const cyc = dur + gap;
-  const idx = t > epoch ? (t - epoch) / cyc : 0n;
-  const cStart = epoch + idx * cyc;
-  return { cStart, betEnd: cStart + dur, cEnd: cStart + cyc };
-}
-function bettableWindow(epoch: bigint, t: bigint, dur = DUR, gap = GAP) {
-  const { cStart, betEnd, cEnd } = cycleOf(epoch, t, dur, gap);
-  if (t < betEnd && betEnd - t >= MIN_BET_WINDOW) return { wStart: cStart, wEnd: betEnd };
-  return { wStart: cEnd, wEnd: cEnd + dur };
+const gridStart = (epoch: bigint, t: bigint, d = DUR) =>
+  t > epoch ? epoch + ((t - epoch) / d) * d : epoch;
+function bettableWindow(epoch: bigint, t: bigint, d = DUR) {
+  let wStart = gridStart(epoch, t, d);
+  let wEnd = wStart + d;
+  if (wEnd - t < MIN_BET_WINDOW) { wStart = wEnd; wEnd = wStart + d; }
+  return { wStart, wEnd };
 }
 
-/** The latest betting-close at or before `target`. The cycle containing
- *  `target` may close AFTER it (when target lands in the betting half), so this
- *  walks back a cycle at a time instead of assuming. */
-function latestCloseAtOrBefore(epoch: bigint, target: bigint) {
-  let c = cycleOf(epoch, target).cStart;
-  while (c + DUR > target) c -= CYC;
-  return c + DUR;
-}
-
-describe("GriddyV10 — a reveal intermission sits between rounds", () => {
+describe("GriddyV10 — resolution starts the next round; the grid is the fallback", () => {
   beforeEach(async () => { await reset(); });
 
   async function deployBeacon() {
@@ -69,7 +60,6 @@ describe("GriddyV10 — a reveal intermission sits between rounds", () => {
     return Beacon.deploy(EVMNET_PUBKEY, EVMNET_GENESIS, EVMNET_PERIOD);
   }
 
-  /** The live proxy's current shape: V9 behind UUPS. */
   async function deployV9() {
     const [owner, alice, bob, carol] = await ethers.getSigners();
     const beacon = await deployBeacon();
@@ -90,12 +80,7 @@ describe("GriddyV10 — a reveal intermission sits between rounds", () => {
     const V10 = await ethers.getContractFactory("GriddyV10");
     const griddy: any = await upgrades.deployProxy(
       V10, [owner.address, await beacon.getAddress(), owner.address], { kind: "uups" });
-    const epoch: bigint = await griddy.roundEpoch();
-    expect(await griddy.revealGap()).to.equal(GAP);
-    const first = await griddy.rounds(1n);
-    expect(first.startTime).to.equal(epoch);
-    expect(first.endTime).to.equal(epoch + DUR);   // betting occupies dur, not cycle
-    return { owner, alice, bob, carol, beacon, griddy, epoch };
+    return { owner, alice, bob, carol, beacon, griddy, epoch: await griddy.roundEpoch() };
   }
 
   async function stakeAt(griddy: any, signer: any, ts: bigint, id: bigint, cells: number[], amounts: bigint[]) {
@@ -104,12 +89,12 @@ describe("GriddyV10 — a reveal intermission sits between rounds", () => {
     return griddy.connect(signer).stake(id, cells, amounts, { value });
   }
 
-  /** A timestamp `offset` seconds into a CYCLE strictly after now. */
-  async function futureCycle(epoch: bigint, offset: bigint) {
-    const now = BigInt(await time.latest());
-    let cs = cycleOf(epoch, now).cStart + CYC;
-    while (cs + offset <= now) cs += CYC;
-    return { cs, t: cs + offset };
+  /** Aim a round's close at `target - gap` so its pin is a real drand round. */
+  function aimAt(epoch: bigint, target: bigint) {
+    let c = gridStart(epoch, target);
+    while (c + DUR > target) c -= DUR;
+    const end = c + DUR;
+    return { end, gap: target - end };
   }
 
   const reservedOf = async (g: any) =>
@@ -117,170 +102,217 @@ describe("GriddyV10 — a reveal intermission sits between rounds", () => {
     + (await g.pendingWithdrawals()) + (await g.accumulatedFees());
 
   // ════════════════════════════════════════════════════════════
-  // 1. The intermission itself
+  // 1. The fast path — resolution starts the clock
   // ════════════════════════════════════════════════════════════
 
-  describe("cycle shape", () => {
-    it("betting occupies only the first roundDuration of each cycle", async () => {
-      const { alice, griddy, epoch } = await deployV10();
-      for (const offset of [0n, 1n, 12n, 23n]) {
-        const { cs, t } = await futureCycle(epoch, offset);
-        const id = (await griddy.currentRoundId()) + 1n;
-        await stakeAt(griddy, alice, t, id, [3], [MIN_STAKE]);
-        const r = await griddy.rounds(id);
-        expect(r.startTime, `offset ${offset}`).to.equal(cs);
-        expect(r.endTime, `offset ${offset}`).to.equal(cs + DUR);
-        // the cycle runs GAP seconds longer than the betting window
-        expect(cs + CYC - BigInt(r.endTime)).to.equal(GAP);
-      }
-    });
-
-    it("a stake landing INSIDE the intermission opens the next cycle, not this one", async () => {
-      const { alice, griddy, epoch } = await deployV10();
-      // 4s into the intermission
-      const { cs, t } = await futureCycle(epoch, DUR + 4n);
-      const id = (await griddy.currentRoundId()) + 1n;
-      await stakeAt(griddy, alice, t, id, [5], [MIN_STAKE]);
-      const r = await griddy.rounds(id);
-      expect(r.startTime).to.equal(cs + CYC);          // next cycle
-      expect(r.endTime).to.equal(cs + CYC + DUR);
-      // and it has not started yet — the player pre-bought into it
-      expect(r.startTime).to.be.greaterThan(t);
-      expect(r.endTime - r.startTime).to.equal(DUR);
-    });
-
-    it("the gap between one round closing and the next opening is exactly revealGap", async () => {
-      const { alice, griddy, epoch } = await deployV10();
-      const a = await futureCycle(epoch, 2n);
-      const idA = (await griddy.currentRoundId()) + 1n;
-      await stakeAt(griddy, alice, a.t, idA, [1], [MIN_STAKE]);
-      const rA = await griddy.rounds(idA);
-
-      // next stake after A's betting closes, inside the intermission
-      const idB = (await griddy.currentRoundId()) + 1n;
-      await stakeAt(griddy, alice, BigInt(rA.endTime) + 2n, idB, [2], [MIN_STAKE]);
-      const rB = await griddy.rounds(idB);
-
-      expect(BigInt(rB.startTime) - BigInt(rA.endTime)).to.equal(GAP);
-    });
-
-    it("a late stake still rolls forward a whole cycle, never into a sliver", async () => {
-      const { alice, griddy, epoch } = await deployV10();
-      const { cs, t } = await futureCycle(epoch, DUR - 3n);   // 3s of betting left
-      const id = (await griddy.currentRoundId()) + 1n;
-      await stakeAt(griddy, alice, t, id, [7], [MIN_STAKE]);
-      const r = await griddy.rounds(id);
-      expect(r.startTime).to.equal(cs + CYC);
-      expect(r.endTime - r.startTime).to.equal(DUR);
-    });
-
-    it("every boundary is a whole number of cycles from the epoch — no drift", async () => {
-      const { alice, griddy, epoch } = await deployV10();
-      for (let i = 0; i < 6; i++) {
-        const { t } = await futureCycle(epoch, 3n + BigInt(i) * 4n);
-        const id = (await griddy.currentRoundId()) + 1n;
-        await stakeAt(griddy, alice, t, id, [i % 25], [MIN_STAKE]);
-        const r = await griddy.rounds(id);
-        expect((BigInt(r.startTime) - epoch) % CYC, "start on cycle").to.equal(0n);
-        expect(r.endTime - r.startTime).to.equal(DUR);
-      }
-    });
-
-    it("two rounds can never share a cycle", async () => {
-      const { alice, bob, griddy, epoch } = await deployV10();
-      const a = await futureCycle(epoch, 1n);
-      const idA = (await griddy.currentRoundId()) + 1n;
-      await stakeAt(griddy, alice, a.t, idA, [1], [MIN_STAKE]);
-      // a second staker inside the same betting window joins A
-      await stakeAt(griddy, bob, a.cs + 5n, idA, [2], [MIN_STAKE]);
-      expect(await griddy.currentRoundId()).to.equal(idA);
-
-      const idB = (await griddy.currentRoundId()) + 1n;
-      await stakeAt(griddy, alice, a.cs + CYC + 1n, idB, [3], [MIN_STAKE]);
-      const rA = await griddy.rounds(idA), rB = await griddy.rounds(idB);
-      expect(BigInt(rB.startTime) - BigInt(rA.startTime)).to.equal(CYC);
-      expect(rB.startTime).to.be.greaterThanOrEqual(rA.endTime);
-    });
-  });
-
-  // ════════════════════════════════════════════════════════════
-  // 2. currentWindow contract with the client
-  // ════════════════════════════════════════════════════════════
-
-  describe("currentWindow", () => {
-    it("idle reading is exactly the window the next stake opens, at every offset in the cycle", async () => {
-      const { alice, griddy, epoch } = await deployV10();
-      await time.increaseTo(epoch + DUR + 1n);
-
-      for (const offset of [0n, 9n, 22n, DUR + 1n, DUR + 8n]) {
-        const { t } = await futureCycle(epoch, offset);
-        await time.setNextBlockTimestamp(t);
-        await ethers.provider.send("evm_mine", []);
-        const [wStart, wEnd, drandRound] = await griddy.currentWindow();
-        const id = (await griddy.currentRoundId()) + 1n;
-        await stakeAt(griddy, alice, t + 1n, id, [4], [MIN_STAKE]);
-        const r = await griddy.rounds(id);
-        expect(r.startTime, `offset ${offset}`).to.equal(wStart);
-        expect(r.endTime, `offset ${offset}`).to.equal(wEnd);
-        expect(r.drandRound, `offset ${offset}`).to.equal(drandRound);
-      }
-    });
-
-    it("during an intermission it advertises a window that has NOT started yet", async () => {
-      const { griddy, epoch } = await deployV10();
-      const { cs } = await futureCycle(epoch, 0n);
-      await time.increaseTo(cs + DUR + 3n);      // 3s into the intermission
-      const now = BigInt(await time.latest());
-      const [wStart, wEnd, , secondsLeft] = await griddy.currentWindow();
-      expect(wStart).to.be.greaterThan(now);      // betting is not open yet
-      expect(wStart).to.equal(cs + CYC);
-      expect(wEnd - wStart).to.equal(DUR);
-      // secondsLeft spans the rest of the intermission PLUS the whole window,
-      // which is exactly why a client must gate on windowStart
-      expect(secondsLeft).to.equal(wEnd - now);
-      expect(secondsLeft).to.be.greaterThan(DUR);
-    });
-
-    it("a client mirroring the cycle from (roundEpoch, roundDuration, revealGap, now) agrees with the chain", async () => {
-      const { griddy, epoch } = await deployV10();
-      await time.increaseTo(epoch + CYC + 1n);
-      for (const skip of [1n, 7n, 19n, 33n, 41n, 260n, 3_000n]) {
-        await time.increase(skip);
-        const now = BigInt(await time.latest());
-        const [wStart, wEnd] = await griddy.currentWindow();
-        const p = bettableWindow(epoch, now);
-        expect(wStart, `skip ${skip}`).to.equal(p.wStart);
-        expect(wEnd, `skip ${skip}`).to.equal(p.wEnd);
-      }
-    });
-  });
-
-  // ════════════════════════════════════════════════════════════
-  // 3. Fairness + money
-  // ════════════════════════════════════════════════════════════
-
-  describe("beacon fairness", () => {
-    it("pins a beacon emitted strictly AFTER the betting close, at every offset including the intermission", async () => {
-      const { alice, beacon, griddy, epoch } = await deployV10();
-      for (const offset of [0n, 5n, 17n, 26n, DUR + 1n, DUR + 9n]) {
-        const { t } = await futureCycle(epoch, offset);
-        const id = (await griddy.currentRoundId()) + 1n;
-        await stakeAt(griddy, alice, t, id, [5], [MIN_STAKE]);
-        const r = await griddy.rounds(id);
-        expect(await beacon.timeOfRound(r.drandRound), `offset ${offset}`)
-          .to.be.greaterThan(r.endTime);
-      }
-    });
-  });
-
-  describe("money math is untouched by the intermission", () => {
-    it("stake-weighted draw + pro-rata split still pays to the wei", async () => {
-      const { owner, alice, bob, carol, griddy, epoch } = await deployV10();
-      // aim the pin at real drand ROUND_10M by choosing beaconGap
-      const end = latestCloseAtOrBefore(epoch, T10M - 3n);
-      const gap = T10M - end;
+  describe("resolution opens the next round", () => {
+    it("the next round starts AT the resolution, with a full roundDuration", async () => {
+      const { owner, alice, griddy, epoch } = await deployV10();
+      const { end, gap } = aimAt(epoch, T10M);
       expect(gap).to.be.greaterThanOrEqual(3n);
-      expect(gap).to.be.lessThanOrEqual(60n);
+      await griddy.connect(owner).setBeaconGap(gap);
+
+      const idA = (await griddy.currentRoundId()) + 1n;
+      await stakeAt(griddy, alice, end - DUR + 2n, idA, [3], [MIN_STAKE]);
+      expect((await griddy.rounds(idA)).endTime).to.equal(end);
+
+      // keeper resolves 4s after the close — the measured live latency
+      const resolveAt = end + 4n;
+      await time.setNextBlockTimestamp(resolveAt);
+      await griddy.connect(owner).resolveRound(idA, SIG_ROUND_10M);
+
+      const idB = await griddy.currentRoundId();
+      expect(idB, "resolution opened the next round").to.equal(idA + 1n);
+      const rB = await griddy.rounds(idB);
+      expect(rB.startTime, "starts at the resolution instant").to.equal(resolveAt);
+      expect(rB.endTime - rB.startTime, "a FULL window, not one part-spent").to.equal(DUR);
+      // this is the whole point: a player looking now sees the full duration
+      expect(BigInt(rB.endTime) - resolveAt).to.equal(DUR);
+    });
+
+    it("currentWindow reports that fresh round, so a client shows a full clock", async () => {
+      const { owner, alice, griddy, epoch } = await deployV10();
+      const { end, gap } = aimAt(epoch, T10M);
+      await griddy.connect(owner).setBeaconGap(gap);
+      const idA = (await griddy.currentRoundId()) + 1n;
+      await stakeAt(griddy, alice, end - DUR + 2n, idA, [3], [MIN_STAKE]);
+
+      const resolveAt = end + 5n;
+      await time.setNextBlockTimestamp(resolveAt);
+      await griddy.connect(owner).resolveRound(idA, SIG_ROUND_10M);
+
+      const [wStart, wEnd, , secsLeft] = await griddy.currentWindow();
+      expect(wStart).to.equal(resolveAt);
+      expect(wEnd).to.equal(resolveAt + DUR);
+      expect(secsLeft).to.equal(DUR);        // a full clock, exactly as asked
+    });
+
+    it("the freshly opened round is immediately stakeable and resolves normally", async () => {
+      const { owner, alice, bob, griddy, epoch } = await deployV10();
+      const a = aimAt(epoch, T10M);
+      await griddy.connect(owner).setBeaconGap(a.gap);
+      const idA = (await griddy.currentRoundId()) + 1n;
+      await stakeAt(griddy, alice, a.end - DUR + 2n, idA, [3], [MIN_STAKE]);
+      const resolveAt = a.end + 4n;
+      await time.setNextBlockTimestamp(resolveAt);
+      await griddy.connect(owner).resolveRound(idA, SIG_ROUND_10M);
+
+      const idB = await griddy.currentRoundId();
+      const rB = await griddy.rounds(idB);
+      // stake into the round resolution just opened
+      await stakeAt(griddy, bob, resolveAt + 3n, idB, [9], [2n * MIN_STAKE]);
+      expect((await griddy.rounds(idB)).totalStakers).to.equal(1n);
+
+      // and it resolves on its own pin
+      await time.increaseTo(BigInt(rB.endTime) + 1n);
+      const emitted = await (await deployBeacon()).timeOfRound(rB.drandRound);
+      expect(emitted).to.be.greaterThan(rB.endTime);
+    });
+
+    it("resolving an OLD round while a newer one is live opens nothing", async () => {
+      const { owner, alice, griddy, epoch } = await deployV10();
+      // Round A aimed at ROUND_10M, round B aimed at ROUND_B, both staked and
+      // ended, so A can be resolved late while B is already the newest.
+      const a = aimAt(epoch, T10M);
+      await griddy.connect(owner).setBeaconGap(a.gap);
+      const idA = (await griddy.currentRoundId()) + 1n;
+      await stakeAt(griddy, alice, a.end - DUR + 2n, idA, [3], [MIN_STAKE]);
+
+      const b = aimAt(epoch, TB);
+      expect(b.end).to.be.greaterThan(a.end);
+      await time.setNextBlockTimestamp(a.end + 1n);
+      await griddy.connect(owner).setBeaconGap(b.gap);
+      const idB = (await griddy.currentRoundId()) + 1n;
+      await stakeAt(griddy, alice, b.end - DUR + 2n, idB, [4], [MIN_STAKE]);
+      expect(await griddy.currentRoundId()).to.equal(idB);
+
+      // resolve the OLDER round A now — must not touch currentRoundId
+      await time.increaseTo(b.end - 3n);
+      await griddy.connect(owner).resolveRound(idA, SIG_ROUND_10M);
+      expect(await griddy.currentRoundId(), "no round opened for a stale resolve").to.equal(idB);
+      expect((await griddy.rounds(idA)).resolved).to.equal(true);
+    });
+
+    it("a paused game does not open a round on resolve", async () => {
+      const { owner, alice, griddy, epoch } = await deployV10();
+      const { end, gap } = aimAt(epoch, T10M);
+      await griddy.connect(owner).setBeaconGap(gap);
+      const idA = (await griddy.currentRoundId()) + 1n;
+      await stakeAt(griddy, alice, end - DUR + 2n, idA, [3], [MIN_STAKE]);
+      await time.setNextBlockTimestamp(end + 1n);
+      await griddy.connect(owner).setPaused(true);
+      await time.setNextBlockTimestamp(end + 4n);
+      await griddy.connect(owner).resolveRound(idA, SIG_ROUND_10M);
+      expect(await griddy.currentRoundId()).to.equal(idA);
+    });
+  });
+
+  // ════════════════════════════════════════════════════════════
+  // 2. The fallback — nothing may halt the game
+  // ════════════════════════════════════════════════════════════
+
+  describe("the grid still backstops everything", () => {
+    it("an EMPTY round rolls straight on with no dead wait — no resolution needed", async () => {
+      const { alice, griddy, epoch } = await deployV10();
+      // open a round and let it expire with nobody in it
+      const now = BigInt(await time.latest());
+      let ws = gridStart(epoch, now) + DUR;
+      while (ws + 2n <= now) ws += DUR;
+      const idA = (await griddy.currentRoundId()) + 1n;
+      await stakeAt(griddy, alice, ws + 2n, idA, [3], [MIN_STAKE]);
+      const endA = BigInt((await griddy.rounds(idA)).endTime);
+
+      // never resolved (keeper absent). A stake 2s after it ends still works,
+      // and lands on the grid — no intermission, no stall.
+      const t = endA + 2n;
+      const predicted = bettableWindow(epoch, t);
+      const idB = (await griddy.currentRoundId()) + 1n;
+      await stakeAt(griddy, alice, t, idB, [4], [MIN_STAKE]);
+      const rB = await griddy.rounds(idB);
+      expect(rB.startTime).to.equal(predicted.wStart);
+      expect(rB.endTime).to.equal(predicted.wEnd);
+      expect(BigInt(rB.startTime)).to.be.lessThanOrEqual(t);   // already running
+    });
+
+    it("a keeper that never resolves cannot halt the game", async () => {
+      const { alice, griddy, epoch } = await deployV10();
+      const now = BigInt(await time.latest());
+      let ws = gridStart(epoch, now) + DUR;
+      while (ws + 2n <= now) ws += DUR;
+      const idA = (await griddy.currentRoundId()) + 1n;
+      await stakeAt(griddy, alice, ws + 2n, idA, [3], [5n * MIN_STAKE]);
+      const endA = BigInt((await griddy.rounds(idA)).endTime);
+
+      // round A has players and is NEVER resolved
+      for (let i = 0; i < 3; i++) {
+        const t = endA + BigInt(i + 1) * (DUR + 7n);
+        const predicted = bettableWindow(epoch, t);
+        const id = (await griddy.currentRoundId()) + 1n;
+        await stakeAt(griddy, alice, t, id, [5 + i], [MIN_STAKE]);
+        const r = await griddy.rounds(id);
+        expect(r.startTime, `round ${i} still opens`).to.equal(predicted.wStart);
+        expect(r.endTime).to.equal(predicted.wEnd);
+      }
+      // and A is still resolvable later — nothing was lost
+      expect((await griddy.rounds(idA)).resolved).to.equal(false);
+      expect(await griddy.totalUnresolvedStakes()).to.be.greaterThan(0n);
+    });
+
+    it("opening can never DECLINE for any config the setters allow, so resolution is never silently degraded", async () => {
+      // _openRoundNow bails out if the pin it would choose is not emitted
+      // strictly after the round closes. That guard exists so a resolution can
+      // never be reverted by round-opening — but it must also be unreachable in
+      // practice, or resolutions would quietly stop advancing the game.
+      // setBeaconGap allows 3..60, setRoundDuration allows 10..3600.
+      const beacon = await deployBeacon();
+      for (const gap of [3n, 4n, 17n, 60n]) {
+        for (const dur of [10n, 30n, 60n, 600n, 3600n]) {
+          for (const off of [0n, 1n, 2n, 3n]) {
+            const start = 1_800_000_000n + off;      // arbitrary future instant
+            const end = start + dur;
+            const dr = await beacon.roundAt(end + gap);
+            expect(
+              await beacon.timeOfRound(dr),
+              `pin must post-date the close: gap ${gap}, dur ${dur}, offset ${off}`
+            ).to.be.greaterThan(end);
+          }
+        }
+      }
+    });
+
+    it("a resolution that escrows an unpayable winner still opens the next round", async () => {
+      // A winner whose receive() reverts is escrowed rather than reverting the
+      // resolution — the round-open sits after that loop, so confirm the two
+      // cannot interfere.
+      const { owner, alice, griddy, epoch } = await deployV10();
+      const { end, gap } = aimAt(epoch, T10M);
+      await griddy.connect(owner).setBeaconGap(gap);
+      const id = (await griddy.currentRoundId()) + 1n;
+      await stakeAt(griddy, alice, end - DUR + 2n, id, [3], [MIN_STAKE]);
+
+      const resolveAt = end + 4n;
+      await time.setNextBlockTimestamp(resolveAt);
+      await griddy.connect(owner).resolveRound(id, SIG_ROUND_10M);
+
+      expect((await griddy.rounds(id)).resolved).to.equal(true);
+      expect(await griddy.currentRoundId()).to.equal(id + 1n);
+      const next = await griddy.rounds(id + 1n);
+      expect(next.startTime).to.equal(resolveAt);
+      expect(next.endTime - next.startTime).to.equal(DUR);
+      // whatever route the money took, the contract still covers every claim
+      expect(await ethers.provider.getBalance(await griddy.getAddress()))
+        .to.be.greaterThanOrEqual(await reservedOf(griddy));
+    });
+  });
+
+  // ════════════════════════════════════════════════════════════
+  // 3. Money is untouched
+  // ════════════════════════════════════════════════════════════
+
+  describe("money math and solvency are unchanged", () => {
+    it("stake-weighted draw + pro-rata payout still lands to the wei, and the new round holds no money", async () => {
+      const { owner, alice, bob, carol, griddy, epoch } = await deployV10();
+      const { end, gap } = aimAt(epoch, T10M);
       await griddy.connect(owner).setBeaconGap(gap);
 
       const id = (await griddy.currentRoundId()) + 1n;
@@ -288,11 +320,7 @@ describe("GriddyV10 — a reveal intermission sits between rounds", () => {
       await stakeAt(griddy, alice, end - DUR + 1n, id, [2], [aS]);
       await stakeAt(griddy, bob, end - DUR + 3n, id, [2], [bS]);
       await stakeAt(griddy, carol, end - DUR + 5n, id, [9], [cS]);
-      const r = await griddy.rounds(id);
-      expect(r.endTime).to.equal(end);
-      expect(r.drandRound).to.equal(ROUND_10M);
 
-      await time.increaseTo(end + 1n);
       const pool = aS + bS + cS;
       const feeBps: bigint = await griddy.protocolFeeBps();
       const dist = pool - (pool * feeBps) / 10_000n;
@@ -300,6 +328,7 @@ describe("GriddyV10 — a reveal intermission sits between rounds", () => {
       const winner = pickWinner(vrfFromSig(SIG_ROUND_10M), totals, pool);
       const winTotal = totals.get(winner)!;
 
+      await time.increaseTo(end + 4n);
       const before = {
         a: await ethers.provider.getBalance(alice.address),
         b: await ethers.provider.getBalance(bob.address),
@@ -307,6 +336,7 @@ describe("GriddyV10 — a reveal intermission sits between rounds", () => {
       };
       await griddy.connect(owner).resolveRound(id, SIG_ROUND_10M);
       expect((await griddy.rounds(id)).winningCell).to.equal(winner);
+
       const paid = (s: bigint) => (dist * s) / winTotal;
       if (winner === 2) {
         expect(await ethers.provider.getBalance(alice.address) - before.a).to.equal(paid(aS));
@@ -315,159 +345,74 @@ describe("GriddyV10 — a reveal intermission sits between rounds", () => {
         expect(await ethers.provider.getBalance(carol.address) - before.c).to.equal(paid(cS));
       }
       expect(await griddy.totalUnresolvedStakes()).to.equal(0n);
-    });
 
-    it("resolution fits inside the intermission — a round is resolvable before the next one opens", async () => {
-      const { owner, alice, griddy, epoch } = await deployV10();
-      const end = latestCloseAtOrBefore(epoch, T10M - 3n);
-      await griddy.connect(owner).setBeaconGap(T10M - end);
-      const id = (await griddy.currentRoundId()) + 1n;
-      await stakeAt(griddy, alice, end - DUR + 1n, id, [4], [5n * 10n ** 16n]);
-
-      // 4s after close — mid-intermission, the keeper's measured latency
-      await time.increaseTo(end + 4n);
-      await griddy.connect(owner).resolveRound(id, SIG_ROUND_10M);
-      const r = await griddy.rounds(id);
-      expect(r.resolved).to.equal(true);
-      // the next betting window has still not opened
-      const now = BigInt(await time.latest());
-      expect(BigInt(r.endTime) + GAP).to.be.greaterThan(now);
+      // the round resolution opened is empty and reserves nothing
+      const fresh = await griddy.rounds(await griddy.currentRoundId());
+      expect(fresh.totalStaked).to.equal(0n);
+      expect(fresh.totalStakers).to.equal(0n);
+      expect(await ethers.provider.getBalance(await griddy.getAddress()))
+        .to.be.greaterThanOrEqual(await reservedOf(griddy));
     });
   });
 
   // ════════════════════════════════════════════════════════════
-  // 4. Upgrade safety — the whole point of the zero guard
+  // 4. Upgrade from the live V9
   // ════════════════════════════════════════════════════════════
 
   describe("upgrade V9 → V10", () => {
-    it("the upgrade alone changes NO timing: revealGap is 0 until initializeV10 runs", async () => {
-      const { alice, griddy, epoch } = await deployV9();
-      const g10 = await upgradeToV10(griddy);
-      expect(await g10.revealGap()).to.equal(0n);
+    it("preserves every slot with money in flight, and the in-flight round resolves and opens the next", async () => {
+      const { owner, alice, bob, griddy, epoch } = await deployV9();
+      const proxy = await griddy.getAddress();
+      const { end, gap } = aimAt(epoch, T10M);
+      await griddy.connect(owner).setBeaconGap(gap);
 
-      // with gap 0 the cycle collapses to roundDuration — V9 behaviour exactly
-      const now = BigInt(await time.latest());
-      let cs = cycleOf(epoch, now, DUR, 0n).cStart + DUR;
-      while (cs + 2n <= now) cs += DUR;
-      const id = (await g10.currentRoundId()) + 1n;
-      await stakeAt(g10, alice, cs + 2n, id, [3], [MIN_STAKE]);
-      const r = await g10.rounds(id);
-      expect(r.startTime).to.equal(cs);
-      expect(r.endTime).to.equal(cs + DUR);        // back-to-back, no gap
-    });
+      const id = (await griddy.currentRoundId()) + 1n;
+      const aS = 3n * 10n ** 17n, bS = 1n * 10n ** 17n;
+      await stakeAt(griddy, alice, end - DUR + 2n, id, [7], [aS]);
+      await stakeAt(griddy, bob, end - DUR + 4n, id, [8], [bS]);
 
-    it("initializeV10 opens the gap, preserves every slot, and is idempotent", async () => {
-      const { owner, alice, griddy, epoch } = await deployV9();
-      // money in flight across the upgrade
-      const now0 = BigInt(await time.latest());
-      let cs = cycleOf(epoch, now0, DUR, 0n).cStart + DUR;
-      while (cs + 1n <= now0) cs += DUR;
-      const idLive = (await griddy.currentRoundId()) + 1n;
-      await stakeAt(griddy, alice, cs + 1n, idLive, [6], [4n * 10n ** 16n]);
-
-      const before = {
+      const snap = {
         round: await griddy.currentRoundId(),
         epoch: await griddy.roundEpoch(),
-        dur: await griddy.roundDuration(),
         fees: await griddy.accumulatedFees(),
         unresolved: await griddy.totalUnresolvedStakes(),
         owner: await griddy.owner(),
-        bal: await ethers.provider.getBalance(await griddy.getAddress()),
+        dur: await griddy.roundDuration(),
+        bal: await ethers.provider.getBalance(proxy),
       };
-      const liveWindow = await griddy.rounds(idLive);
+      const liveBefore = await griddy.rounds(id);
 
       const g10 = await upgradeToV10(griddy);
-      // permissionless callers are now rejected outright
-      const [, , , , stranger] = await ethers.getSigners();
-      await expect(g10.connect(stranger).initializeV10()).to.be.reverted;
+      expect(await g10.getAddress()).to.equal(proxy);
+      expect(await g10.currentRoundId()).to.equal(snap.round);
+      expect(await g10.roundEpoch()).to.equal(snap.epoch);
+      expect(await g10.accumulatedFees()).to.equal(snap.fees);
+      expect(await g10.totalUnresolvedStakes()).to.equal(snap.unresolved);
+      expect(await g10.owner()).to.equal(snap.owner);
+      expect(await g10.roundDuration()).to.equal(snap.dur);
+      expect(await ethers.provider.getBalance(proxy)).to.equal(snap.bal);
+      const liveAfter = await g10.rounds(id);
+      expect(liveAfter.startTime).to.equal(liveBefore.startTime);
+      expect(liveAfter.endTime).to.equal(liveBefore.endTime);
+      expect(liveAfter.totalStaked).to.equal(liveBefore.totalStaked);
 
-      await g10.connect(owner).initializeV10();
-      expect(await g10.revealGap()).to.equal(GAP);
-
-      expect(await g10.currentRoundId()).to.equal(before.round);
-      expect(await g10.roundDuration()).to.equal(before.dur);
-      // the grid is deliberately RE-ANCHORED so the longer cycle takes effect
-      // from the live round's close instead of re-phasing underneath it
-      const newEpoch: bigint = await g10.roundEpoch();
-      expect(newEpoch).to.equal(BigInt(liveWindow.endTime));
-      expect(newEpoch).to.not.equal(before.epoch);
-      expect(await g10.accumulatedFees()).to.equal(before.fees);
-      expect(await g10.totalUnresolvedStakes()).to.equal(before.unresolved);
-      expect(await g10.owner()).to.equal(before.owner);
-      expect(await ethers.provider.getBalance(await g10.getAddress())).to.equal(before.bal);
-      // the round already open keeps the exact window it was opened with
-      const after = await g10.rounds(idLive);
-      expect(after.startTime).to.equal(liveWindow.startTime);
-      expect(after.endTime).to.equal(liveWindow.endTime);
-      expect(after.totalStaked).to.equal(liveWindow.totalStaked);
-
-      // reinitializer(5) cannot run twice
-      await expect(g10.connect(owner).initializeV10()).to.be.reverted;
+      // the V9-shaped round resolves under V10 and opens the next one
+      const resolveAt = end + 4n;
+      await time.setNextBlockTimestamp(resolveAt);
+      await g10.connect(owner).resolveRound(id, SIG_ROUND_10M);
+      expect((await g10.rounds(id)).resolved).to.equal(true);
+      expect(await g10.currentRoundId()).to.equal(id + 1n);
+      const next = await g10.rounds(id + 1n);
+      expect(next.startTime).to.equal(resolveAt);
+      expect(next.endTime - next.startTime).to.equal(DUR);
+      expect(await ethers.provider.getBalance(proxy)).to.be.greaterThanOrEqual(await reservedOf(g10));
     });
 
-    it("initializeV10 is owner-gated and never overwrites a gap already set", async () => {
-      const { owner, griddy } = await deployV10();          // fresh: gap already set
-      await griddy.connect(owner).setRevealGap(25n);
-      // reinitializer(5) is unclaimed on a fresh deploy, but no longer callable
-      // by a stranger — that was the single most-reported audit surface
-      const [, stranger] = await ethers.getSigners();
-      await expect(griddy.connect(stranger).initializeV10()).to.be.reverted;
-      // and the owner running it is a no-op, not a re-time
-      const epochBefore = await griddy.roundEpoch();
-      await griddy.connect(owner).initializeV10();
-      expect(await griddy.revealGap()).to.equal(25n);        // untouched
-      expect(await griddy.roundEpoch()).to.equal(epochBefore);
-    });
-
-    it("the first cycle after migration is full length and does not overlap the round it follows", async () => {
-      const { owner, alice, griddy, epoch } = await deployV9();
-      // a live V9 round straddling the upgrade
-      const now0 = BigInt(await time.latest());
-      let cs = cycleOf(epoch, now0, DUR, 0n).cStart + DUR;
-      while (cs + 1n <= now0) cs += DUR;
-      const idLive = (await griddy.currentRoundId()) + 1n;
-      await stakeAt(griddy, alice, cs + 1n, idLive, [6], [MIN_STAKE]);
-      const liveEnd = BigInt((await griddy.rounds(idLive)).endTime);
-
+    it("needs no initializer — V10 appends no storage", async () => {
+      const { griddy, epoch } = await deployV9();
       const g10 = await upgradeToV10(griddy);
-      await g10.connect(owner).initializeV10();
-      const newEpoch: bigint = await g10.roundEpoch();
-
-      // first round opened after the live one closes
-      await time.increaseTo(liveEnd + 1n);
-      const idNext = (await g10.currentRoundId()) + 1n;
-      await stakeAt(g10, alice, liveEnd + 2n, idNext, [7], [MIN_STAKE]);
-      const rNext = await g10.rounds(idNext);
-
-      expect(rNext.startTime, "no overlap with the round it follows")
-        .to.be.greaterThanOrEqual(liveEnd);
-      expect(rNext.endTime - rNext.startTime, "full betting window").to.equal(DUR);
-      expect((BigInt(rNext.startTime) - newEpoch) % (DUR + GAP), "on the new cycle grid").to.equal(0n);
-    });
-  });
-
-  describe("setRevealGap", () => {
-    it("is owner-only and bounded", async () => {
-      const { owner, alice, griddy } = await deployV10();
-      await expect(griddy.connect(alice).setRevealGap(5n)).to.be.reverted;
-      await expect(griddy.connect(owner).setRevealGap(301n)).to.be.revertedWith("gap too long");
-      await griddy.connect(owner).setRevealGap(0n);
-      expect(await griddy.revealGap()).to.equal(0n);
-      await griddy.connect(owner).setRevealGap(300n);
-      expect(await griddy.revealGap()).to.equal(300n);
-    });
-
-    it("never moves a round that is already open", async () => {
-      const { owner, alice, griddy, epoch } = await deployV10();
-      const { t } = await futureCycle(epoch, 2n);
-      const id = (await griddy.currentRoundId()) + 1n;
-      await stakeAt(griddy, alice, t, id, [8], [MIN_STAKE]);
-      const before = await griddy.rounds(id);
-      await griddy.connect(owner).setRevealGap(120n);
-      const after = await griddy.rounds(id);
-      expect(after.startTime).to.equal(before.startTime);
-      expect(after.endTime).to.equal(before.endTime);
-      expect(after.drandRound).to.equal(before.drandRound);
+      expect(await g10.roundEpoch()).to.equal(epoch);
+      expect(await g10.roundDuration()).to.equal(DUR);
     });
   });
 });

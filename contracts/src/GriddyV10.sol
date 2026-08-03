@@ -7,7 +7,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {DrandBeacon} from "./drand/DrandBeacon.sol";
 
-/// @title GriddyV10 — variable-stake native-token pari-mutuel 5x5 grid, grid-aligned rounds with a reveal intermission
+/// @title GriddyV10 — grid-aligned rounds, with the next round's clock started by resolution
 /// @notice Players stake any amount of ETH (>= minStakeWei per new position) on
 ///         any cells. A drand evmnet beacon — pinned at round start to a round
 ///         emitted only after betting closes, BLS-verified on-chain — picks the
@@ -42,15 +42,19 @@ import {DrandBeacon} from "./drand/DrandBeacon.sol";
 ///         on every client, ticking through rounds nobody plays, never reset
 ///         or extended by a player's action. Fee/tip/payout math, continuous
 ///         resolution and every accounting invariant are unchanged from V6.
-///         V10 inserts a REVEAL INTERMISSION between rounds: the grid steps by
-///         CYCLE = roundDuration + revealGap, betting occupies the first
-///         roundDuration of each cycle and the remainder is dead time reserved
-///         for resolution and the winner reveal. So the next round's clock
-///         genuinely starts after the result has been shown, rather than the
-///         instant the previous round closed. revealGap == 0 collapses this
-///         back to V9 exactly. UUPS-upgradeable (storage layout frozen from V2:
-///         retired vars retained, unused; V7 appends roundEpoch; V8/V9 append
-///         nothing; V10 appends revealGap at the end).
+///         V10 lets RESOLUTION start the next round: when the round that just
+///         settled is the newest one, resolveRound opens the next one starting
+///         at that instant, so a player watching sees a full roundDuration
+///         begin the moment the winner is known instead of a clock already
+///         part-spent. The grid is kept as the fallback and the deadline —
+///         when nothing resolves (an empty round, or a keeper that is slow or
+///         gone) the next stake opens a round on the grid exactly as in V9, so
+///         no single actor can halt the game by declining to resolve. Opening
+///         can never revert a resolution: if the beacon invariant cannot be
+///         met it silently declines and the grid path takes over.
+///         UUPS-upgradeable (storage layout frozen from V2: retired vars
+///         retained, unused; V7 appends roundEpoch at the end; V8, V9 and V10
+///         append nothing — pure logic changes).
 contract GriddyV10 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
     /// @dev Namespaced-slot reentrancy guard (OZ 5.6 dropped the storage-based
     ///      upgradeable guard; transient storage isn't guaranteed on all chains)
@@ -97,15 +101,6 @@ contract GriddyV10 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
     ///         opens — under V8 every round is a full roundDuration long, so
     ///         nobody can buy into a short round in the first place.
     uint256 public constant MIN_BET_WINDOW = 6;
-    /// @dev Sized against the real chain, worst case: the pinned beacon is not
-    ///      emitted until up to beaconGap seconds after the close (4 live), the
-    ///      keeper then needs a poll plus a transaction (~1-4s), and the client
-    ///      holds the winner on screen for 3s after it witnesses the reveal.
-    ///      That is ~11s, so 10 had no margin at all — 12 does. Tune live with
-    ///      {setRevealGap}; the cap keeps an owner from stalling the game
-    ///      behind a huge dead gap.
-    uint256 public constant DEFAULT_REVEAL_GAP = 12;
-    uint256 public constant MAX_REVEAL_GAP = 300;
 
     // ─── Linear storage: NEVER reorder, append-only (see __gap) ───
     /// @custom:oz-renamed-from griddyToken
@@ -166,22 +161,10 @@ contract GriddyV10 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
     ///         to players across all pending rounds (see sweepSurplus)
     uint256 public totalUnresolvedStakes;
     // ─ appended in V7 (still append-only: nothing above ever moves) ─
-    /// @notice Anchor of the round grid. Boundaries are a function of TIME,
-    ///         never of who staked when. See {revealGap} for the cycle shape.
+    /// @notice Anchor of the round grid. Every betting window is
+    ///         [roundEpoch + k * roundDuration, roundEpoch + (k+1) * roundDuration),
+    ///         so boundaries are a function of TIME, never of who staked when.
     uint64 public roundEpoch;
-
-    // ─ appended in V10 ─
-    /// @notice Dead time between one round's betting close and the next
-    ///         round's betting open, reserved for resolution + the winner
-    ///         reveal. The grid therefore steps by CYCLE = roundDuration +
-    ///         revealGap, and cycle k is
-    ///             betting     [roundEpoch + k*CYCLE, ... + roundDuration)
-    ///             intermission[... + roundDuration,  roundEpoch + (k+1)*CYCLE)
-    /// @dev revealGap == 0 collapses the cycle back to roundDuration and this
-    ///      contract behaves EXACTLY like V9 — which is what the freshly
-    ///      upgraded proxy does until initializeV10 runs, making the upgrade
-    ///      itself behaviour-preserving.
-    uint256 public revealGap;
 
     event RoundStarted(uint256 indexed roundId, uint64 startTime, uint64 endTime, uint64 drandRound);
     event Staked(uint256 indexed roundId, address indexed player, uint8 cell, uint256 amount, uint256 playerCellTotal, uint256 cellTotalAfter);
@@ -224,7 +207,6 @@ contract GriddyV10 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
         beaconGap = 10;
         protocolFeeBps = 500;        // 5%
         resolverTipWei = 3e13;       // 0.00003 ETH
-        revealGap = DEFAULT_REVEAL_GAP;         // set before the grid is read
         roundEpoch = uint64(block.timestamp);   // anchor the grid before the first window
         _startNewRound();
     }
@@ -271,24 +253,6 @@ contract GriddyV10 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
             roundEpoch = uint64(block.timestamp);
         }
         // else: the grid is already anchored — never re-phase it here
-    }
-
-    /// @notice V9 -> V10 migration: open the reveal intermission.
-    /// @dev Until this runs, revealGap is 0 and the cycle collapses to
-    ///      roundDuration — i.e. the upgraded proxy behaves exactly like V9, so
-    ///      the upgrade transaction itself changes no timing. The zero guard
-    ///      mirrors initializeV5/V7's: on a fresh deployment initialize()
-    ///      already set the gap and reinitializer(5) is left unclaimed and
-    ///      callable by anyone, so an unconditional write would let a stranger
-    ///      re-time the grid out from under a live round. onlyOwner closes that
-    ///      door outright rather than relying on the guard alone — four
-    ///      independent audit lenses reached for this function first, and the
-    ///      modifier costs nothing.
-    function initializeV10() external onlyOwner reinitializer(5) {
-        if (revealGap == 0) {
-            revealGap = DEFAULT_REVEAL_GAP;
-            _rephaseGrid();
-        }
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -351,7 +315,11 @@ contract GriddyV10 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
     // ══════════════════════════════════════════════════════════════
 
     /// @notice Resolve any ended round with stakers — including rounds the
-    ///         betting window has long since rolled past. Never opens rounds.
+    ///         betting window has long since rolled past.
+    /// @dev V10: when the round being resolved is the NEWEST one, this also
+    ///      opens the next round starting at this instant, so a player sees a
+    ///      full roundDuration begin the moment the winner is known. Resolving
+    ///      an older round while a newer one is already live opens nothing.
     function resolveRound(uint256 roundId, uint256[2] calldata signature) external nonReentrant {
         require(roundId <= currentRoundId, "Wrong round");
 
@@ -418,6 +386,38 @@ contract GriddyV10 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
         }
 
         emit RoundResolved(roundId, winningCell, winnersCount, winnerTotal, distributable);
+
+        // ─── V10: the next round's clock starts HERE, not at the grid tick ───
+        // Only when the round just settled is the newest one — resolution of an
+        // older round while a newer is already live must not open anything.
+        if (roundId == currentRoundId && !paused) {
+            _openRoundNow();
+        }
+    }
+
+    /// @notice Open the next round starting at this instant. Used only by
+    ///         {resolveRound}, so a player sees a full roundDuration begin the
+    ///         moment the previous round's winner is known.
+    /// @dev MUST NOT be able to revert resolveRound. A round's pin has to be a
+    ///      beacon emitted strictly after that round closes; if the current
+    ///      beaconGap/roundDuration cannot satisfy that, this silently declines
+    ///      to open rather than trapping the pot of an already-drawn round in
+    ///      an unresolvable state. The grid path in {stake} then opens the next
+    ///      round as it always did, so declining costs liveness nothing.
+    function _openRoundNow() private {
+        uint64 start = uint64(block.timestamp);
+        uint64 end = start + uint64(roundDuration);
+        if (end <= start) return;
+        uint64 drandRound = beacon.roundAt(uint256(end) + beaconGap);
+        if (beacon.timeOfRound(drandRound) <= end) return;   // never block a payout
+
+        currentRoundId++;
+        Round storage round = rounds[currentRoundId];
+        round.startTime = start;
+        round.endTime = end;
+        round.drandRound = drandRound;
+
+        emit RoundStarted(currentRoundId, start, end, drandRound);
     }
 
     function _payWinner(
@@ -599,12 +599,12 @@ contract GriddyV10 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
         // opened).
         Round storage live = rounds[currentRoundId];
         if (currentRoundId != 0 && !live.resolved && block.timestamp < live.endTime) {
-            // The round's own stored window IS a cycle's betting window, so
-            // report it directly. NOTE: windowStart can be in the FUTURE when a
-            // stake landed during an intermission and pre-opened the next
-            // round — callers must compare against windowStart, not assume
-            // betting is live, and must not read secondsLeft as "time to bet"
-            // without that check (it spans the intermission too).
+            // Report the round's OWN start, not a grid slot. Under V10 a round
+            // opened by resolution begins at the resolution instant and is
+            // deliberately off-grid, so deriving windowStart from the grid (as
+            // V9 did) would hand clients an anchor the round never had — they
+            // step their local clock from it, and would drift by however far
+            // the resolution sat from the nearest boundary.
             return (
                 live.startTime,
                 live.endTime,
@@ -640,13 +640,12 @@ contract GriddyV10 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
     ///      roundEpoch and stepping by roundDuration, so it depends on nothing
     ///      but the clock — which is what lets an empty lobby still count down.
     ///      Timestamps at or before the anchor clamp to window 0 (no underflow).
-    function _cycleOf(uint64 t) internal view returns (uint64 cStart, uint64 betEnd, uint64 cEnd) {
+    function _windowOf(uint64 t) internal view returns (uint64 wStart, uint64 wEnd) {
         uint64 epoch = roundEpoch;
-        uint64 cyc = uint64(roundDuration + revealGap);
-        uint64 cIdx = t > epoch ? (t - epoch) / cyc : 0;
-        cStart = epoch + cIdx * cyc;
-        betEnd = cStart + uint64(roundDuration);
-        cEnd = cStart + cyc;
+        uint64 dur = uint64(roundDuration);
+        uint64 wIdx = t > epoch ? (t - epoch) / dur : 0;
+        wStart = epoch + wIdx * dur;
+        wEnd = wStart + dur;
     }
 
     /// @notice The grid tick to advertise at `t`: the window containing `t`,
@@ -657,40 +656,11 @@ contract GriddyV10 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
     ///      exactly. The MIN_BET_WINDOW roll keeps either one off a sliver of a
     ///      window.
     function _bettableWindow(uint64 t) internal view returns (uint64 wStart, uint64 wEnd) {
-        (uint64 cStart, uint64 betEnd, uint64 cEnd) = _cycleOf(t);
-        // Still meaningfully open in this cycle? (t < betEnd covers the
-        // intermission, where betEnd - t would underflow the comparison.)
-        if (t < betEnd && betEnd - t >= MIN_BET_WINDOW) {
-            return (cStart, betEnd);
+        (wStart, wEnd) = _windowOf(t);
+        if (wEnd - t < MIN_BET_WINDOW) {
+            wStart = wEnd;
+            wEnd = wStart + uint64(roundDuration);
         }
-        // Betting for this cycle is closed — either the window ran out or we
-        // are inside the reveal intermission. Point at the NEXT cycle's window,
-        // which is the one a stake landing now actually buys into.
-        return (cEnd, cEnd + uint64(roundDuration));
-    }
-
-    /// @dev Re-anchor the cycle grid so the next cycle begins at or after the
-    ///      live round's close.
-    ///
-    ///      Changing roundDuration or revealGap changes the CYCLE length, and
-    ///      every boundary is derived as roundEpoch + k*CYCLE — so without this
-    ///      the change re-phases the whole grid underneath a round that is
-    ///      already open. The next round would then be cut from a cycle that
-    ///      started in the past, overlapping the round that just closed and
-    ///      offering a fraction of a full window's betting time. Nothing is
-    ///      lost financially (rounds are independent accounting units and each
-    ///      resolves on its own pinned beacon), but it is a visibly wrong first
-    ///      round, and it is exactly what happens on the V9 -> V10 migration
-    ///      when the cycle grows from roundDuration to roundDuration+revealGap.
-    ///
-    ///      Anchoring at max(now, live.endTime) makes the change take effect
-    ///      cleanly from the next cycle: no overlap, first cycle full length.
-    function _rephaseGrid() internal {
-        uint64 anchor = uint64(block.timestamp);
-        uint64 liveEnd = rounds[currentRoundId].endTime;
-        if (liveEnd > anchor) anchor = liveEnd;
-        roundEpoch = anchor;
-        emit ConfigUpdated("roundEpoch", anchor);
     }
 
     function _startNewRound() internal {
@@ -738,13 +708,7 @@ contract GriddyV10 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable {
     ///      roundEpoch anchor, so the next boundary moves. Accepted: it is
     ///      owner-only, the live round keeps the endTime it opened with, and
     ///      the new window is still strictly in the future.
-    /// @notice Resize the betting window. Takes effect from the next cycle —
-    ///         a round already open keeps the window it was opened with.
-    function setRoundDuration(uint256 _v) external onlyOwner { require(_v >= 10 && _v <= 3600, "10s-1h"); roundDuration = _v; _rephaseGrid(); emit ConfigUpdated("roundDuration", _v); }
-    /// @notice Resize the reveal intermission. Takes effect from the next cycle
-    ///         — a round already open keeps the window it was opened with, so
-    ///         no live bet moves and no cycle overlaps the round it follows.
-    function setRevealGap(uint256 _v) external onlyOwner { require(_v <= MAX_REVEAL_GAP, "gap too long"); revealGap = _v; _rephaseGrid(); emit ConfigUpdated("revealGap", _v); }
+    function setRoundDuration(uint256 _v) external onlyOwner { require(_v >= 10 && _v <= 3600, "10s-1h"); roundDuration = _v; emit ConfigUpdated("roundDuration", _v); }
     function setBeaconGap(uint256 _v) external onlyOwner { require(_v >= 3 && _v <= 60, "3-60s"); beaconGap = _v; emit ConfigUpdated("beaconGap", _v); }
     function setResolverTip(uint256 _v) external onlyOwner { require(_v <= MAX_RESOLVER_TIP, "Tip>0.001"); resolverTipWei = _v; emit ConfigUpdated("resolverTipWei", _v); }
     function setProtocolFeeBps(uint256 _v) external onlyOwner { require(_v <= 2000, "Fee>20%"); protocolFeeBps = _v; emit ConfigUpdated("protocolFeeBps", _v); }

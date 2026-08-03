@@ -2,23 +2,19 @@ import { ethers, upgrades, network } from "hardhat";
 import * as fs from "fs";
 import * as path from "path";
 
-/** Upgrades the live Griddy proxy to V10 and opens the reveal intermission.
+/** Upgrades the live Griddy proxy to V10: RESOLUTION starts the next round.
  *
- *  V10 steps the grid by CYCLE = roundDuration + revealGap: betting occupies
- *  the first roundDuration of each cycle, the remainder is dead time reserved
- *  for resolution and the winner reveal. So the next round's clock genuinely
- *  starts AFTER the result has been shown, instead of the instant the previous
- *  round closed.
+ *  When the round that just settled is the newest one, resolveRound opens the
+ *  next round starting at that instant — so a player sees a full roundDuration
+ *  begin the moment the winner is known, instead of a clock already part-spent.
  *
- *  Two transactions on purpose:
- *    1. upgradeProxy      — revealGap is still 0, so the cycle collapses to
- *                           roundDuration and behaviour is identical to V9.
- *                           Nothing about live timing changes in this tx.
- *    2. initializeV10()   — opens the gap AND re-anchors roundEpoch to the live
- *                           round's close, so the longer cycle takes effect
- *                           cleanly from the next round rather than re-phasing
- *                           the grid underneath the one already open.
- */
+ *  The grid is kept as the fallback: when nothing resolves (an empty round, or
+ *  a keeper that is slow or gone) the next stake opens a round on the grid
+ *  exactly as V9 does, so no single actor can halt the game by declining to
+ *  resolve. Opening can never revert a resolution — if the beacon invariant
+ *  cannot be met it silently declines and the grid path takes over.
+ *
+ *  Pure logic change: no new storage, so there is NO initializer call. */
 async function main() {
   const chainId = network.config.chainId;
   if ((chainId === 4663 || chainId === 5042) && process.env.CONFIRM_MAINNET !== "yes") {
@@ -45,34 +41,20 @@ async function main() {
     balance: await ethers.provider.getBalance(proxy),
   };
   const wBefore = await before.currentWindow();
-  const liveRound = await before.rounds(snap.roundId);
+  const liveBefore = await before.rounds(snap.roundId);
   console.log(`proxy ${proxy}`);
   console.log(`  before: round=${snap.roundId} fees=${ethers.formatEther(snap.fees)} unresolved=${ethers.formatEther(snap.unresolved)}`);
   console.log(`          roundDuration=${snap.duration}s beaconGap=${snap.gap}s feeBps=${snap.feeBps} minStakeWei=${snap.minStake}`);
   console.log(`          roundEpoch=${snap.epoch}  balance=${ethers.formatEther(snap.balance)}`);
   console.log(`          currentWindow: [${wBefore.windowStart}, ${wBefore.windowEnd}) secondsLeft=${wBefore.secondsLeft}`);
-  console.log(`          live round ${snap.roundId}: [${liveRound.startTime}, ${liveRound.endTime}) resolved=${liveRound.resolved} stakers=${liveRound.totalStakers}`);
+  console.log(`          live round ${snap.roundId}: [${liveBefore.startTime}, ${liveBefore.endTime}) resolved=${liveBefore.resolved} stakers=${liveBefore.totalStakers}`);
   console.log(`  signer: ${signer.address}`);
-  if (signer.address.toLowerCase() !== snap.owner.toLowerCase()) {
-    throw new Error(`signer is not the owner (${snap.owner}) — initializeV10 is onlyOwner`);
-  }
 
-  // ── 1. implementation swap (behaviour-preserving: revealGap still 0) ──
   const V10 = await ethers.getContractFactory("GriddyV10");
   const v10 = await upgrades.upgradeProxy(proxy, V10);
   await v10.waitForDeployment();
   const impl = await upgrades.erc1967.getImplementationAddress(proxy);
-  console.log(`\n  [1/2] upgraded. new impl: ${impl}`);
-  const gapAfterUpgrade = await v10.revealGap();
-  console.log(`        revealGap after upgrade = ${gapAfterUpgrade} (0 = timing unchanged, exactly as V9)`);
-  if (gapAfterUpgrade !== 0n) {
-    console.log(`        note: gap already non-zero — initializeV10 will be a no-op`);
-  }
-
-  // ── 2. open the intermission + re-anchor the grid ──
-  const tx = await v10.initializeV10();
-  await tx.wait();
-  console.log(`  [2/2] initializeV10 mined: ${tx.hash}`);
+  console.log(`\n  upgraded. new impl: ${impl}`);
 
   const after = {
     roundId: await v10.currentRoundId(),
@@ -85,15 +67,12 @@ async function main() {
     feeBps: await v10.protocolFeeBps(),
     tip: await v10.resolverTipWei(),
     epoch: await v10.roundEpoch(),
-    revealGap: await v10.revealGap(),
     balance: await ethers.provider.getBalance(proxy),
   };
   const w = await v10.currentWindow();
   const liveAfter = await v10.rounds(snap.roundId);
-  const cycle = after.duration + after.revealGap;
-  console.log(`\n  after:  round=${after.roundId} fees=${ethers.formatEther(after.fees)} unresolved=${ethers.formatEther(after.unresolved)}`);
-  console.log(`          roundDuration=${after.duration}s revealGap=${after.revealGap}s  => CYCLE ${cycle}s`);
-  console.log(`          roundEpoch=${after.epoch} (re-anchored from ${snap.epoch})`);
+  console.log(`  after:  round=${after.roundId} fees=${ethers.formatEther(after.fees)} unresolved=${ethers.formatEther(after.unresolved)}`);
+  console.log(`          roundDuration=${after.duration}s beaconGap=${after.gap}s roundEpoch=${after.epoch}`);
   console.log(`          currentWindow: [${w.windowStart}, ${w.windowEnd}) secondsLeft=${w.secondsLeft}`);
 
   const reserved = after.unresolved
@@ -111,16 +90,11 @@ async function main() {
     ["beaconGap untouched", after.gap === snap.gap],
     ["protocolFeeBps untouched", after.feeBps === snap.feeBps],
     ["resolverTipWei untouched", after.tip === snap.tip],
-    ["revealGap opened", after.revealGap > 0n],
-    ["grid still anchored", after.epoch !== 0n],
-    // the round that was live must keep the exact window it was opened with
-    ["live round's window unmoved", liveAfter.startTime === liveRound.startTime && liveAfter.endTime === liveRound.endTime],
-    ["live round's stake unmoved", liveAfter.totalStaked === liveRound.totalStaked],
-    // the re-anchor must not sit before the live round's close, or the next
-    // cycle would overlap the round it follows
-    ["grid re-anchored at/after the live round's close", after.epoch >= liveRound.endTime],
-    ["betting window is roundDuration, not the whole cycle", w.windowEnd - w.windowStart === after.duration],
-    ["advertised window sits on the new cycle grid", (BigInt(w.windowStart) - after.epoch) % cycle === 0n],
+    ["roundEpoch untouched (no initializer ran)", after.epoch === snap.epoch],
+    ["fallback grid still anchored", after.epoch !== 0n],
+    ["live round's window unmoved", liveAfter.startTime === liveBefore.startTime && liveAfter.endTime === liveBefore.endTime],
+    ["live round's stake unmoved", liveAfter.totalStaked === liveBefore.totalStaked],
+    ["advertised window is a full roundDuration", w.windowEnd - w.windowStart === after.duration],
   ];
   let allOk = true;
   for (const [n, ok] of checks) { console.log(`  ${ok ? "✓" : "✗"} ${n}`); if (!ok) allOk = false; }
@@ -128,11 +102,10 @@ async function main() {
 
   dep.griddyImpl = impl;
   dep.version = "V10";
-  dep.revealGap = Number(after.revealGap);
   dep.upgradedAt = new Date().toISOString();
   fs.writeFileSync(file, JSON.stringify(dep, null, 2));
   console.log(`\nWrote ${file}`);
-  console.log(`Rounds now run ${after.duration}s of betting followed by a ${after.revealGap}s reveal intermission (${cycle}s cycle).`);
-  console.log(`The next round's clock starts only after the intermission — i.e. after the winner has been shown.`);
+  console.log(`Resolution now starts the next round: a full ${after.duration}s begins the moment a winner is known.`);
+  console.log(`The grid remains the fallback — empty rounds roll straight on, and a stalled keeper cannot halt the game.`);
 }
 main().catch((e) => { console.error(e.shortMessage || e.message); process.exit(1); });
