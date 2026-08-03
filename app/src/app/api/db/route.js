@@ -23,7 +23,11 @@ export const dynamic = "force-dynamic";
 const URL_ = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 const KEY = process.env.SUPABASE_SERVICE_KEY || "";
 
-const ADDR = /^0x[0-9a-fA-F]{40}$/;
+// 0X as well as 0x: callers may pass EIP-55 checksummed or upper-cased
+// addresses, and silently dropping those looks like "this player has no
+// profile" rather than a bug. Values are lower-cased before they reach the
+// query, so the stored lower-case column still matches.
+const ADDR = /^0[xX][0-9a-fA-F]{40}$/;
 
 async function sb(path) {
   const r = await fetch(`${URL_}/rest/v1/${path}`, {
