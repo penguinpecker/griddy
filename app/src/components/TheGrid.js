@@ -2159,6 +2159,25 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
               <span style={S.statValueTop}>{myTotalStaked > 0n ? `$${fmt(myTotalStaked)}` : "—"}</span>
               <span style={S.statLabel}>YOUR STAKE</span>
             </div>
+            {/* Desktop-only 4th cell: the payout quote for the focused square.
+                 The bar below is one line at board width, so the quote lives
+                 up here; phones keep it in the (vertical) panel instead. */}
+            <div style={{ ...S.statCell, borderLeft: "1px solid rgba(148,178,255,0.08)" }} className="grid-stat-payout">
+              {(() => {
+                const focus = selectedCell != null ? selectedCell : (hoveredCell >= 0 ? hoveredCell : null);
+                const pay = focus != null ? payoutFor(focus) : null;
+                return (
+                  <>
+                    <span style={{ ...S.statValueTop, color: "#6FB0FF" }}>
+                      {focus != null && pay != null ? `$${fmt(pay)}` : "—"}
+                    </span>
+                    <span style={S.statLabel}>
+                      {focus != null ? `${CELL_LABELS[focus]} PAYS` : "PAYOUT IF WIN"}
+                    </span>
+                  </>
+                );
+              })()}
+            </div>
           </div>
 
           {/* What the number above actually means. The draw is stake-weighted,
@@ -2395,7 +2414,10 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
              board: header 56 + slim top row ~66 + status 22 + stake bar ~150
              + gaps/padding ~46. The board takes the rest, so board AND bar
              both land above the fold; history scrolls below. */
-          --gsize: clamp(300px, calc(100dvh - 364px), 780px);
+          /* cap raised 780 -> 900: on tall displays the height budget allows a
+             larger board, and since the whole column tracks the board, a small
+             cap was what left the wide dead margins either side */
+          --gsize: clamp(300px, calc(100dvh - 364px), 900px);
         }
         /* ── Desktop: hero+timer share one row; stake bar under the board ── */
         .grid-top-row .grid-hero {
@@ -2404,7 +2426,13 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
         }
         .grid-top-row .grid-pot-hero { font-size: 26px !important; line-height: 1 !important; }
         .grid-top-row .grid-pot-unit { font-size: 13px !important; }
-        .grid-top-row .grid-timer-panel { flex: 1 1 auto; min-width: 0; padding: 8px 16px 10px !important; }
+        /* !important throughout: the inline style says width:100%/flex-shrink:0
+           (right for the stacked phone layout, wrong in this row) and inline
+           beats a stylesheet otherwise — the panel measured 629px and ran past
+           the board's right edge. */
+        .grid-top-row .grid-timer-panel { flex: 1 1 auto !important; width: auto !important; min-width: 0 !important; padding: 8px 16px 10px !important; }
+        /* 4th stat cell (payout) needs a 4th track — the inline grid is 3 */
+        .grid-stat-row { grid-template-columns: repeat(4, 1fr) !important; }
         .grid-top-row .grid-timer-big { font-size: 24px !important; line-height: 1.05 !important; }
         .grid-bet-col { width: 100%; max-width: none !important; }
         .grid-bet-panel {
@@ -2418,15 +2446,17 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
         .grid-bet-hint { display: none !important; }
         .grid-stake-label { display: none !important; }
         .grid-stake-picker {
-          flex: 2 1 340px; min-width: 300px;
+          flex: 2 1 300px; min-width: 280px;
           flex-direction: row !important; align-items: center !important; gap: 10px !important;
         }
-        .grid-stake-chips { flex: 1 1 220px; min-width: 200px; }
+        .grid-stake-chips { flex: 1 1 170px; min-width: 160px; }
         .grid-stake-chips .stake-chip { padding: 10px 2px !important; font-size: 12px !important; }
-        .grid-stake-inputwrap { flex: 1 1 150px; min-width: 140px; }
+        .grid-stake-inputwrap { flex: 1 1 140px; min-width: 130px; }
         .grid-stake-inputwrap input { font-size: 20px !important; padding: 11px 58px 11px 14px !important; }
-        .grid-bet-rows { flex: 0 1 190px; min-width: 160px; gap: 2px !important; }
-        .grid-bet-panel > button { flex: 1 1 230px; min-width: 210px; margin: 0 !important; }
+        /* quote lives in the stat row on desktop, so the bar stays one line
+           at board width */
+        .grid-bet-rows { display: none !important; }
+        .grid-bet-panel > button { flex: 1 1 200px; min-width: 190px; margin: 0 !important; }
         .grid-bet-error { flex-basis: 100%; }
         .grid-stat-row { padding: 6px 0 !important; }
         .grid-outer-panel { width: min(100%, var(--gsize)) !important; }
@@ -2514,6 +2544,9 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
           .grid-top-row .grid-timer-panel { flex: none; width: 100%; padding: 7px 14px 8px !important; }
           .grid-top-row .grid-timer-big { font-size: 22px !important; }
           .grid-bet-panel { flex-direction: column !important; align-items: stretch !important; }
+          .grid-bet-rows { display: flex !important; }
+          .grid-stat-payout { display: none !important; }
+          .grid-stat-row { grid-template-columns: repeat(3, 1fr) !important; }
           .grid-bet-head { display: flex !important; }
           .grid-stat-note { display: block !important; }
           .grid-bet-note { display: block !important; }
@@ -2805,10 +2838,10 @@ const S = {
   stage: { width: "100%", maxWidth: 1120, display: "flex", flexDirection: "column", minHeight: 0, padding: "8px 0 8px" },
   cols: {
     flex: 1, minHeight: 0, display: "grid",
-    // ONE column: board on top, stake bar directly beneath it, history last.
-    // The board's own width is capped by --gsize inside the game area, so the
-    // bar can run wider than the board without stretching it.
-    gridTemplateColumns: "minmax(0, 1fr)",
+    // ONE column that TRACKS THE BOARD WIDTH: hero, timer, stats, stake bar
+    // and history all share the board's exact left/right edges, so nothing
+    // floats in the dead space beside a height-capped board.
+    gridTemplateColumns: "minmax(0, min(100%, var(--gsize)))",
     gap: 10, alignItems: "start", justifyContent: "center",
   },
   // hero + countdown share this slim row so the board owns the height
