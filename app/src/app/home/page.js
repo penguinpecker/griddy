@@ -144,6 +144,7 @@ export default function HomePage() {
         <nav style={{display:"flex", alignItems:"center", gap:4}}>
           <button onClick={()=>router.push("/home")} className="nav-btn-home" style={{background:"transparent", border:"none", fontFamily:MONO, fontSize:10, fontWeight:700, color:FAINT, cursor:"pointer", letterSpacing:2, padding:"14px 16px", borderRadius:999, transition:"color 0.2s"}}>HOME</button>
           <button onClick={()=>router.push("/play")} className="nav-btn-play-hp" style={{background:"transparent", border:"none", fontFamily:MONO, fontSize:10, fontWeight:700, color:ACCENT, cursor:"pointer", letterSpacing:2, padding:"14px 16px", borderRadius:999, animation:"navGlow 3s ease-in-out infinite", transition:"color 0.2s"}}>PLAY</button>
+          <button onClick={()=>router.push("/leaderboard")} className="nav-btn-home" style={{background:"transparent", border:"none", fontFamily:MONO, fontSize:10, fontWeight:700, color:FAINT, cursor:"pointer", letterSpacing:2, padding:"14px 16px", borderRadius:999, transition:"color 0.2s"}}>LEADERBOARD</button>
         </nav>
         <div/>
       </header>
@@ -159,9 +160,9 @@ export default function HomePage() {
             <GriddyMark size={72}/>
             <span style={{fontFamily:BALOO, fontWeight:800, fontSize:"clamp(56px,11vw,96px)", color:"#F4F7FF", letterSpacing:0.5, lineHeight:1}}>griddy</span>
           </div>
-          <div className="hero-tag" style={{fontFamily:MONO, fontSize:"clamp(11px,2.7vw,14px)", letterSpacing:4, fontWeight:600, color:ACCENT, marginBottom:18, textAlign:"center"}}>PICK A SQUARE. TAKE THE POT. ✦</div>
+          <div className="hero-tag" style={{fontFamily:MONO, fontSize:"clamp(11px,2.7vw,14px)", letterSpacing:4, fontWeight:600, color:ACCENT, marginBottom:18, textAlign:"center"}}>STAKE A SQUARE. TAKE THE POT. ✦</div>
           <div style={{fontSize:13.5, color:MUTED, lineHeight:1.8, marginBottom:22, maxWidth:560}}>
-            Pick a cell on the 5×5 grid. A drand randomness beacon — verified on-chain — selects the winner from occupied cells only. Winners share the pot — or keep everything if they picked alone.
+            Stake a cell on the 5×5 grid. A drand randomness beacon — verified on-chain — selects the winner from occupied cells only. Winners share the pot — or keep everything if they staked alone.
           </div>
           <div style={{display:"flex", gap:8, flexWrap:"wrap", justifyContent:"center"}}>
             {["PLACE ANY AMOUNT OF USDC","60S ROUNDS","DRAND BEACON EVERY ROUND","AUTO-PAY ON RESOLVE"].map(c=>(
@@ -202,7 +203,7 @@ export default function HomePage() {
                 <div key={l} style={{fontFamily:MONO, fontSize:9, letterSpacing:1.5, color:FAINT, display:"flex", alignItems:"baseline", gap:6}}>{l} <b style={{fontFamily:BALOO, fontSize:14, fontWeight:700, color:vc||TXT, letterSpacing:0}}>{v}</b></div>
               ))}
             </div>
-            <button onClick={()=>router.push("/play")} className="cta-pill" style={{...CTA, position:"relative"}}>PICK A SQUARE ◎</button>
+            <button onClick={()=>router.push("/play")} className="cta-pill" style={{...CTA, position:"relative"}}>STAKE A SQUARE ◎</button>
             <div style={{fontFamily:MONO, fontSize:9, letterSpacing:2, color:FAINT, textAlign:"center", position:"relative"}}>SIMULATION · ARC · DRAND SECURED</div>
           </div>
 
@@ -261,7 +262,7 @@ export default function HomePage() {
                     <span style={{fontFamily:BALOO, fontSize:40, fontWeight:800, color:ACCENT, lineHeight:1}}>2</span>
                     <span style={{fontFamily:MONO, fontSize:10, color:MUTED, letterSpacing:1, lineHeight:1.6, textAlign:"left"}}>FREE<br/>ROUNDS<br/>CREDITED</span>
                   </div>
-                  <button onClick={()=>router.push("/play")} className="cta-pill" style={CTA}>PICK A SQUARE ◎</button>
+                  <button onClick={()=>router.push("/play")} className="cta-pill" style={CTA}>STAKE A SQUARE ◎</button>
                 </div>
               )}
             </div>
@@ -316,8 +317,8 @@ export default function HomePage() {
         <div className="steps-grid">
           {[
             {n:"01",icon:"🔐",t:"LOGIN",d:"Sign in with email, Google, or wallet. Privy creates an embedded wallet instantly — no seed phrase needed."},
-            {n:"02",icon:"⬡",t:"PICK A CELL",d:"Place any amount of USDC (min $0.10) on any squares. Multiple players can pick the same square — the prize splits pro-rata to what each put in."},
-            {n:"03",icon:"🎲",t:"DRAND BEACON",d:"When the 60s round ends, the drand beacon pinned at round start is emitted. Its BLS signature is verified on-chain and picks the winner from occupied cells only."},
+            {n:"02",icon:"⬡",t:"STAKE A CELL",d:"Place any amount of USDC (min $0.10) on any squares. Multiple players can stake the same square — the prize splits pro-rata to what each put in."},
+            {n:"03",icon:"🎲",t:"DRAND BEACON",d:"When the 60s round ends, the drand beacon pinned at round start is emitted. Its BLS signature is verified on-chain and draws the winner from occupied cells only."},
             {n:"04",icon:"💰",t:"GET PAID",d:"Winners are paid automatically during resolution. No claim step — USDC goes straight to your wallet, pro-rata to what you put on the winning square."},
           ].map(({n,icon,t,d})=>(
             <div key={n} style={{...CARD, borderRadius:18, padding:22, display:"flex", flexDirection:"column", gap:10}}>

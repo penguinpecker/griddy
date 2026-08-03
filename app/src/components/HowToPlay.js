@@ -79,10 +79,10 @@ export default function HowToPlay() {
       <div className="htp-content" style={S.content}>
         {/* Hero */}
         <div style={S.hero}>
-          <div style={S.heroTag}>PICK A SQUARE. TAKE THE POT. ✦</div>
+          <div style={S.heroTag}>STAKE A SQUARE. TAKE THE POT. ✦</div>
           <h1 className="htp-hero-title" style={S.heroTitle}>How to play</h1>
           <p style={S.heroDesc}>
-            Pick a cell. Stake USDC. When the round closes, a drand randomness beacon
+            Stake a cell with USDC. When the round closes, a drand randomness beacon
             determines the winning cell. If you staked on it, you receive your share of the prize.
           </p>
         </div>
@@ -94,7 +94,7 @@ export default function HowToPlay() {
             play. Stake from <Hl>$0.10</Hl> on any cell.
           </Step>
 
-          <Step num="02" title="PICK YOUR CELL">
+          <Step num="02" title="STAKE YOUR CELL">
             Choose any cell on the <Hl>5×5 grid</Hl> and enter your stake. You can stake on multiple
             cells, and multiple players can stake on the same cell.
           </Step>
@@ -156,7 +156,7 @@ export default function HowToPlay() {
           <div style={S.legend}>
             <LegendItem color="linear-gradient(145deg,#141F3D,#0C152E)" border="rgba(150,180,255,0.10)" label="Empty" />
             <LegendItem color="rgba(62,139,255,0.22)" border="rgba(62,139,255,0.45)" label="Claimed" />
-            <LegendItem color="linear-gradient(180deg,#5FA6FF,#2E7BFF)" border="rgba(111,176,255,0.8)" label="Your Pick" glow />
+            <LegendItem color="linear-gradient(180deg,#5FA6FF,#2E7BFF)" border="rgba(111,176,255,0.8)" label="Your Stake" glow />
             <LegendItem color="linear-gradient(180deg,#6FB0FF,#3E8BFF)" border="rgba(111,176,255,0.9)" label="Winner" glow />
           </div>
         </div>
@@ -185,7 +185,7 @@ export default function HowToPlay() {
 
         {/* CTA */}
         <div style={S.ctaSection}>
-          <a href="/" style={S.ctaBtn}>PICK A SQUARE ◎</a>
+          <a href="/" style={S.ctaBtn}>STAKE A SQUARE ◎</a>
           <div style={S.ctaSub}>
             ON-CHAIN · ARC · RANDOMNESS BY DRAND
           </div>

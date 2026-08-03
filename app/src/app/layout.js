@@ -2,8 +2,8 @@ import Providers from "@/components/Providers";
 import "./globals.css";
 
 export const metadata = {
-  title: "Griddy — Pick a Square. Take the Pot.",
-  description: "Provably fair 5×5 grid game on Arc testnet. Stake USDC, pick a square, take the pot. Randomness by drand, verified on-chain.",
+  title: "Griddy — Stake a Square. Take the Pot.",
+  description: "Provably fair 5×5 grid game on Arc testnet. Stake USDC on a square, take the pot. Randomness by drand, verified on-chain.",
 };
 
 export default function RootLayout({ children }) {

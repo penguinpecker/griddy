@@ -1741,6 +1741,7 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
         <nav className="grid-header-nav" style={{display:"flex",alignItems:"center",gap:4,flexShrink:0}}>
           <button onClick={()=>window.location.href="/home"} className="nav-btn-home" style={{background:"transparent",border:"1px solid transparent",fontFamily:"'JetBrains Mono',monospace",fontSize:10,fontWeight:700,color:"#55688F",cursor:"pointer",letterSpacing:2,padding:"6px 12px",borderRadius:999,transition:"color 0.2s"}}>HOME</button>
           <button className="nav-btn-play" style={{background:"rgba(62,139,255,0.08)",border:"1px solid rgba(62,139,255,0.25)",fontFamily:"'JetBrains Mono',monospace",fontSize:10,fontWeight:700,color:"#3E8BFF",cursor:"default",letterSpacing:2,padding:"6px 12px",borderRadius:999}}>PLAY</button>
+          <button onClick={()=>window.location.href="/leaderboard"} className="nav-btn-home" style={{background:"transparent",border:"1px solid transparent",fontFamily:"'JetBrains Mono',monospace",fontSize:10,fontWeight:700,color:"#55688F",cursor:"pointer",letterSpacing:2,padding:"6px 12px",borderRadius:999,transition:"color 0.2s"}}>LEADERBOARD</button>
         </nav>
         {/* Right — balance pill + wallet */}
         <div style={{...S.hRight, gap:8, justifyContent:"flex-end", flexShrink:0}}>
@@ -1927,6 +1928,9 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
 
         {/* ─── GAME COLUMN ─── */}
         <div style={S.colLeft} className="grid-game-area">
+          {/* Hero + countdown share one slim row on desktop so the board gets
+               the vertical room — they stack again on phones */}
+          <div style={S.topRow} className="grid-top-row">
           {/* Round tag + pot hero */}
           <div style={S.hero} className="grid-hero">
           <div style={S.roundTag}>ROUND {roundState === "init" ? "—" : displayRound}</div>
@@ -1958,7 +1962,7 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
                 : inIntermission ? "NEXT ROUND OPENS IN"
                 : showWindowClock ? "NEXT ROUND CLOSES"
                 : isNextRoundView ? "BETTING OPEN"
-                : "PICK A SQUARE"}
+                : "STAKE A SQUARE"}
             </div>
             <div style={{ ...S.timerBig, color: timerColor }} className="grid-timer-big">
               {revealActive ? CELL_LABELS[reveal.cell]
@@ -1974,6 +1978,7 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
                 backgroundColor: timerColor,
               }} />
             </div>
+          </div>
           </div>
 
           {/* Grid — width is capped against the leftover viewport height
@@ -2160,7 +2165,7 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
                so "win chance" is the odds one of YOUR squares is drawn — a
                different quantity from your share of the prize, which is settled
                pro-rata inside the winning square. */}
-          <div style={S.statNote}>
+          <div style={S.statNote} className="grid-stat-note">
             win chance = money on your squares ÷ whole pot — the odds one of your squares is drawn, not your share of the prize
           </div>
 
@@ -2180,9 +2185,9 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
               const tooBig = stakeWei > spendable;
               return (
                 <>
-                  <div style={S.betHead}>
+                  <div style={S.betHead} className="grid-bet-head">
                     <span style={{ fontFamily: "'Baloo 2', sans-serif", fontSize: 18, fontWeight: 800, color: "#EAF1FF", letterSpacing: 0.5 }}>
-                      {focus != null ? `CELL ${CELL_LABELS[focus]}` : "PICK A SQUARE"}
+                      {focus != null ? `CELL ${CELL_LABELS[focus]}` : "STAKE A SQUARE"}
                     </span>
                     {focus != null && (
                       <span style={{ fontSize: 10, color: "#8FA3C9", letterSpacing: 0.5, fontFamily: "'JetBrains Mono', monospace" }}>
@@ -2223,7 +2228,7 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
                   </div>
 
                   {error && (
-                    <div style={S.errorBox} onClick={() => setError(null)}>
+                    <div style={S.errorBox} className="grid-bet-error" onClick={() => setError(null)}>
                       ⚠ {String(error).slice(0, 120)} — tap to dismiss
                     </div>
                   )}
@@ -2249,10 +2254,10 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
                       {belowMin ? `MIN $${fmt(minStake)}` : tooBig ? `NOT ENOUGH — MAX $${fmt(spendable)}` : `PLACE $${stakeAmount} ON ${CELL_LABELS[selectedCell]} ◎`}
                     </button>
                   ) : (
-                    <button style={{ ...S.betCta, opacity: 0.45, cursor: "default" }} disabled>PICK A SQUARE ◎</button>
+                    <button style={{ ...S.betCta, opacity: 0.45, cursor: "default" }} disabled>STAKE A SQUARE ◎</button>
                   )}
                   {myTotalStaked > 0n && (
-                    <div style={{ fontSize: 9.5, color: "#55688F", textAlign: "center", fontFamily: "'Inter', sans-serif" }}>
+                    <div className="grid-bet-hint" style={{ fontSize: 9.5, color: "#55688F", textAlign: "center", fontFamily: "'Inter', sans-serif" }}>
                       you can place on more squares or top up — no limit
                     </div>
                   )}
@@ -2386,8 +2391,44 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
           height: 100dvh !important;
           max-height: 100dvh !important;
           overflow: hidden !important;
-          --gsize: clamp(220px, calc(100dvh - 356px), 660px);
+          /* Budget for everything that must share the first screen with the
+             board: header 56 + slim top row ~66 + status 22 + stake bar ~150
+             + gaps/padding ~46. The board takes the rest, so board AND bar
+             both land above the fold; history scrolls below. */
+          --gsize: clamp(300px, calc(100dvh - 364px), 780px);
         }
+        /* ── Desktop: hero+timer share one row; stake bar under the board ── */
+        .grid-top-row .grid-hero {
+          flex-direction: row !important; align-items: center !important;
+          gap: 12px !important; flex-shrink: 0;
+        }
+        .grid-top-row .grid-pot-hero { font-size: 26px !important; line-height: 1 !important; }
+        .grid-top-row .grid-pot-unit { font-size: 13px !important; }
+        .grid-top-row .grid-timer-panel { flex: 1 1 auto; min-width: 0; padding: 8px 16px 10px !important; }
+        .grid-top-row .grid-timer-big { font-size: 24px !important; line-height: 1.05 !important; }
+        .grid-bet-col { width: 100%; max-width: none !important; }
+        .grid-bet-panel {
+          display: flex !important; flex-direction: row !important;
+          align-items: center !important; flex-wrap: wrap;
+          gap: 14px !important; padding: 12px 16px !important;
+        }
+        .grid-bet-head { display: none !important; }
+        .grid-stat-note { display: none !important; }
+        .grid-bet-note { display: none !important; }
+        .grid-bet-hint { display: none !important; }
+        .grid-stake-label { display: none !important; }
+        .grid-stake-picker {
+          flex: 2 1 340px; min-width: 300px;
+          flex-direction: row !important; align-items: center !important; gap: 10px !important;
+        }
+        .grid-stake-chips { flex: 1 1 220px; min-width: 200px; }
+        .grid-stake-chips .stake-chip { padding: 10px 2px !important; font-size: 12px !important; }
+        .grid-stake-inputwrap { flex: 1 1 150px; min-width: 140px; }
+        .grid-stake-inputwrap input { font-size: 20px !important; padding: 11px 58px 11px 14px !important; }
+        .grid-bet-rows { flex: 0 1 190px; min-width: 160px; gap: 2px !important; }
+        .grid-bet-panel > button { flex: 1 1 230px; min-width: 210px; margin: 0 !important; }
+        .grid-bet-error { flex-basis: 100%; }
+        .grid-stat-row { padding: 6px 0 !important; }
         .grid-outer-panel { width: min(100%, var(--gsize)) !important; }
         /* Right rail: the history table flexes into the leftover height and
            scrolls inside itself instead of pushing the page past one screen */
@@ -2463,6 +2504,27 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
           .grid-wrap { flex: 0 0 auto !important; }
           /* Entry controls first, history after — the CTA stays reachable */
           .grid-hist-below { order: 9 !important; }
+          /* Phones keep the stacked layout: hero over timer, vertical panel.
+             Selectors mirror the desktop ones so specificity ties and source
+             order (this block is later) decides. */
+          .grid-top-row { flex-direction: column !important; gap: 4px !important; }
+          .grid-top-row .grid-hero { flex-direction: column !important; gap: 0 !important; }
+          .grid-top-row .grid-pot-hero { font-size: clamp(28px, 9.5vw, 38px) !important; }
+          .grid-top-row .grid-pot-unit { font-size: 14px !important; }
+          .grid-top-row .grid-timer-panel { flex: none; width: 100%; padding: 7px 14px 8px !important; }
+          .grid-top-row .grid-timer-big { font-size: 22px !important; }
+          .grid-bet-panel { flex-direction: column !important; align-items: stretch !important; }
+          .grid-bet-head { display: flex !important; }
+          .grid-stat-note { display: block !important; }
+          .grid-bet-note { display: block !important; }
+          .grid-bet-hint { display: block !important; }
+          .grid-stake-label { display: block !important; }
+          .grid-stake-picker { flex-direction: column !important; align-items: stretch !important; min-width: 0; }
+          .grid-stake-chips { min-width: 0; }
+          .grid-stake-inputwrap { min-width: 0; }
+          .grid-stake-inputwrap input { font-size: 15px !important; padding: 7px 42px 7px 12px !important; }
+          .grid-bet-rows { min-width: 0; }
+          .grid-bet-panel > button { flex: none; min-width: 0; }
           .grid-hist-slot > .grid-table-panel { height: auto !important; }
           .grid-hist-slot .grid-user-history-scroll { max-height: 240px !important; }
           .grid-header { position: sticky !important; top: 0 !important; height: 54px !important; }
@@ -2562,8 +2624,8 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
 function StakePicker({ value, onChange, minStake, stakeWei }) {
   const belowMin = stakeWei > 0n && stakeWei < minStake;
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
-      <div style={{ display: "flex", gap: 6 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 9 }} className="grid-stake-picker">
+      <div style={{ display: "flex", gap: 6 }} className="grid-stake-chips">
         {STAKE_CHIPS.map((c) => {
           const active = String(value) === c;
           return (
@@ -2584,10 +2646,10 @@ function StakePicker({ value, onChange, minStake, stakeWei }) {
           );
         })}
       </div>
-      <div style={{ fontSize: 10, letterSpacing: 2, color: "#8FA3C9", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", marginTop: 2 }}>
+      <div style={{ fontSize: 10, letterSpacing: 2, color: "#8FA3C9", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", marginTop: 2 }} className="grid-stake-label">
         ENTER AMOUNT TO PLACE
       </div>
-      <div style={{ position: "relative" }}>
+      <div style={{ position: "relative" }} className="grid-stake-inputwrap">
         <input
           value={value}
           onChange={(e) => onChange(e.target.value.replace(/[^0-9.]/g, ""))}
@@ -2743,16 +2805,27 @@ const S = {
   stage: { width: "100%", maxWidth: 1120, display: "flex", flexDirection: "column", minHeight: 0, padding: "8px 0 8px" },
   cols: {
     flex: 1, minHeight: 0, display: "grid",
-    // left column tracks the board width so the timer/stat rails line up with it
-    gridTemplateColumns: "minmax(0, min(100%, var(--gsize))) clamp(318px, 30%, 384px)",
-    gap: 24, alignItems: "stretch", justifyContent: "center",
+    // ONE column: board on top, stake bar directly beneath it, history last.
+    // The board's own width is capped by --gsize inside the game area, so the
+    // bar can run wider than the board without stretching it.
+    gridTemplateColumns: "minmax(0, 1fr)",
+    gap: 10, alignItems: "start", justifyContent: "center",
   },
+  // hero + countdown share this slim row so the board owns the height
+  topRow: { display: "flex", alignItems: "stretch", gap: 12, width: "100%", minWidth: 0 },
   colLeft: { display: "flex", flexDirection: "column", alignItems: "center", gap: 6, minWidth: 0 },
   colRight: {
-    justifyContent: "center", display: "flex", flexDirection: "column", alignItems: "stretch", gap: 9, minWidth: 0, minHeight: 0 },
+    // NO minHeight: 0 here. Inside the height-locked stage the grid squeezes
+    // rows to their minimum when space runs short, and min-height 0 makes
+    // this row's minimum literally zero — the stake bar then paints over the
+    // history below it (row 2 measured 0px). Content height is the minimum.
+    display: "flex", flexDirection: "column", alignItems: "stretch", gap: 9, minWidth: 0 },
   // YOUR HISTORY takes whatever height the bet card leaves over and scrolls
   // internally — the right rail then reaches the bottom of the stage
-  histBelow: { gridColumn: 1, width: "100%", minWidth: 0, flexShrink: 0 },
+  // No gridColumn pin: with an explicit column but an auto row, grid placement
+  // may share a row with the auto-placed bet column and paint over it (seen at
+  // 960px). Fully auto placement lands it in its own row below the bar.
+  histBelow: { width: "100%", minWidth: 0, flexShrink: 0 },
   histSlot: { width: "100%", flex: "1 1 auto", minHeight: 118, display: "flex", flexDirection: "column" },
   // grow into spare height, but never shrink under the board — a squeezed
   // wrapper would overlap the timer/stat rows instead of scrolling
