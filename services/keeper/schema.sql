@@ -32,7 +32,8 @@ create table if not exists griddy_stakes (
 -- who is signed in. So every player publishes their OWN row once per login
 -- (app/src/app/api/profile/route.js, service key, identity taken from the
 -- verified Privy token — never from the request body) and the board reads the
--- whole address -> avatar map back with the anon key.
+-- avatars back through /api/db, which asks only for the addresses currently on
+-- the board rather than handing out the whole map.
 create table if not exists griddy_players (
   address          text primary key,             -- lowercase 0x address
   twitter_username text,
@@ -47,12 +48,23 @@ alter table griddy_rounds enable row level security;
 alter table griddy_stakes enable row level security;
 alter table griddy_players enable row level security;
 
--- Public read (site uses the publishable key); writes require the service
--- role, held only by the keeper. Verified: anon SELECT 200, anon INSERT 401.
+-- NO public read. Nothing in the browser holds a database key any more: the
+-- board reads both tables through app/src/app/api/db/route.js, server side,
+-- with the service role. RLS is left ON with zero SELECT policies, which
+-- denies every non-service role, and the table-level grant is revoked too so
+-- a policy added by accident later still cannot expose these.
+--
+-- This is deliberate, not leftover tightening. A Supabase publishable key is
+-- meant to be handed to browsers, so it is NOT a secret and cannot be the
+-- control — the row rules are. griddy_rounds and griddy_stakes only mirror
+-- what is already public on chain, but griddy_players maps a wallet to an X
+-- handle, which is NOT on chain: with a public read policy anyone holding the
+-- publishable key (shared across every app in this project) could dump the
+-- whole wallet -> handle list in one request. The API route only ever answers
+-- for explicitly named addresses, capped at 60, so it cannot be enumerated.
 drop policy if exists "griddy_rounds public read" on griddy_rounds;
-create policy "griddy_rounds public read" on griddy_rounds for select using (true);
 drop policy if exists "griddy_stakes public read" on griddy_stakes;
-create policy "griddy_stakes public read" on griddy_stakes for select using (true);
--- Avatars are public by design; the route holds the only write credential.
 drop policy if exists "griddy_players public read" on griddy_players;
-create policy "griddy_players public read" on griddy_players for select using (true);
+revoke select on griddy_rounds  from anon, authenticated;
+revoke select on griddy_stakes  from anon, authenticated;
+revoke select on griddy_players from anon, authenticated;

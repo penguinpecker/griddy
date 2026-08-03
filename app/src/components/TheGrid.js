@@ -285,9 +285,11 @@ export default function TheGrid() {
   const gridWindow = useRef(null); // { anchor, dur } — a known grid boundary + window length
   const [windowSpan, setWindowSpan] = useState(0);
   const [smoothWindowTime, setSmoothWindowTime] = useState(0);
-  // Seconds until betting OPENS. Non-zero only during the V10 reveal
-  // intermission, where the next round exists on the grid but has not started.
+  // Seconds until betting OPENS — non-zero only once this slot has shut.
   const [windowOpensIn, setWindowOpensIn] = useState(0);
+  // This slot's own remaining time, without the roll-forward. Used for an
+  // empty lobby, which has nothing to wait for.
+  const [smoothSlotTime, setSmoothSlotTime] = useState(0);
   const [selectedCell, setSelectedCell] = useState(null);
   // Measured keycap width — the avatar stack is sized off the real tile so it
   // packs the same on a 660px board and a 320px phone
@@ -456,9 +458,16 @@ export default function TheGrid() {
         const w = bettableWindowAt(nowSec, g.anchor, g.dur, g.gap);
         if (w) {
           setSmoothWindowTime(Math.max(0, w.end - nowSec));
-          // > 0 only inside the reveal intermission — the seconds until the
-          // next round's clock starts, which is what the panel shows there.
+          // > 0 only when betting for this slot has already shut and a stake
+          // would buy the NEXT one.
           setWindowOpensIn(Math.max(0, w.start - nowSec));
+          // The same grid slot WITHOUT the roll-forward. An empty lobby has no
+          // round to buy into and nothing to wait for, so it just counts this
+          // slot down — otherwise the last few seconds of every minute flip to
+          // "opens in", and the figure jumps, with nobody playing.
+          const cyc = g.dur + (g.gap || 0);
+          const cStart = g.anchor + Math.floor((nowSec - g.anchor) / cyc) * cyc;
+          setSmoothSlotTime(Math.max(0, cStart + g.dur - nowSec));
         }
       }
       animFrame.current = requestAnimationFrame(tick);
@@ -1346,13 +1355,15 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
   // creates the real round, so the panel says RESOLVING instead.
   const resolving = roundState === "revealing";
   const showWindowClock = windowSpan > 0 && isNextRoundView && !resolving;
-  // V10: betting is shut for these seconds while the round resolves and its
-  // winner is shown. The next round's clock has NOT started — so the panel
-  // counts down to the open, and the round clock afterwards begins at a full
-  // roundDuration instead of already part-spent.
-  const inIntermission = windowSpan > 0 && windowOpensIn > 0;
+  // Nobody has staked the round on screen, so there is no pending round to
+  // wait for — an empty lobby just counts the current slot down rather than
+  // flipping to "opens in" for the last few seconds of every minute.
+  const emptyLobby = viewPlayers === 0 && !resolving && !revealActive;
+  // Betting for this slot has shut and a stake would buy the next one. Only
+  // worth saying when somebody is actually in the round.
+  const inIntermission = windowSpan > 0 && windowOpensIn > 0 && !emptyLobby;
   const opensInText = `${String(Math.floor(Math.max(0, windowOpensIn) / 60)).padStart(2, "0")}:${String(Math.floor(Math.max(0, windowOpensIn)) % 60).padStart(2, "0")}`;
-  const countdown = showWindowClock ? smoothWindowTime : smoothTime;
+  const countdown = showWindowClock ? (emptyLobby ? smoothSlotTime : smoothWindowTime) : smoothTime;
   const countdownSpan = showWindowClock ? windowSpan : actualDuration;
   // Bar empties while the round settles and while its result is held up — the
   // round it belonged to is over and the next one has not opened.
