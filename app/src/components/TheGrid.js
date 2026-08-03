@@ -5,7 +5,7 @@ import { useResolverSSE } from "./useResolverSSE";
 import { createPublicClient, http, fallback, parseEther, encodeFunctionData } from "viem";
 import {
   gameChain, CHAIN_ID, RPC_URL, EXPLORER, GRID_ADDR,
-  ALCHEMY_RPC, GAS_SPONSOR, SSE_URL, SUPABASE_URL, SUPABASE_ANON, DRAND_CHAIN_HASH,
+  ALCHEMY_RPC, GAS_SPONSOR, SSE_URL, DRAND_CHAIN_HASH,
 } from "@/lib/config";
 
 // ═══════════════════════════════════════════════════════════════
@@ -156,7 +156,6 @@ const EMPTY_SET = new Set();
 // while the next round's board is shown, so nothing may ever push into it.
 const EMPTY_PLAYERS = Object.freeze(Array.from({ length: TOTAL_CELLS }, () => Object.freeze([])));
 const freshPlayers = () => Array.from({ length: TOTAL_CELLS }, () => []);
-const dbHeaders = { apikey: SUPABASE_ANON, Authorization: `Bearer ${SUPABASE_ANON}` };
 
 // ─── Avatar stack (who is standing on each square) ───
 // A round lasts one window, so its Staked logs always sit inside the newest
@@ -730,7 +729,6 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
   // Each address is asked for once per session; a miss just leaves the
   // coloured-initial fallback in place.
   useEffect(() => {
-    if (!SUPABASE_URL || !SUPABASE_ANON) return;
     const want = [];
     for (const list of cellPlayers) {
       for (const a of list) {
@@ -740,12 +738,10 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
       }
     }
     if (want.length === 0) return;
-    fetch(
-      `${SUPABASE_URL}/rest/v1/griddy_players?select=address,twitter_username,pfp_url&address=in.(${want.slice(0, 60).join(",")})`,
-      { headers: dbHeaders, cache: "no-store" }
-    )
-      .then((r) => (r.ok ? r.json() : []))
-      .then((rows) => {
+    // same-origin for the same reason as the history — see /api/db
+    fetch(`/api/db?t=players&addrs=${want.slice(0, 60).join(",")}`, { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { players: [] }))
+      .then(({ players: rows }) => {
         if (!Array.isArray(rows) || rows.length === 0) return;
         setProfiles((prev) => {
           const next = { ...prev };
@@ -818,14 +814,14 @@ async function getEventsChunked({ eventName, args, sinceBlocks = 400_000n, stopA
   // chain in 9k-block chunks (which needed ~45 sequential RPC round-trips and
   // took 30s+). Chain remains the fallback and the source of truth.
   const loadDbHistory = async () => {
-    if (!SUPABASE_URL || !SUPABASE_ANON) return null;
     try {
-      const r = await fetch(
-        `${SUPABASE_URL}/rest/v1/griddy_rounds?select=round_id,winning_cell,total_staked_wei,total_stakers,drand_round,resolve_tx_hash&order=round_id.desc&limit=100`,
-        { headers: dbHeaders, cache: "no-store" }
-      );
+      // Same-origin: the key lives on the server. Reading Supabase straight
+      // from the browser needed a public key that Vercel would not hand a local
+      // prebuilt build, so it shipped EMPTY and every load silently fell back
+      // to the 45-round-trip chain walk.
+      const r = await fetch("/api/db?t=rounds", { cache: "no-store" });
       if (!r.ok) return null;
-      const rows = await r.json();
+      const rows = (await r.json())?.rounds;
       if (!Array.isArray(rows) || rows.length === 0) return null;
       return rows.map((x) => ({
         roundId: Number(x.round_id),
